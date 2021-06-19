@@ -17,7 +17,7 @@ codegen-units = 1
 
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
-firecore-game = { path = "../pokemon-game/game", default-features = false, features = ["battle", "ser", "static-link"] }
+firecore-game = { git = "https://github.com/DoNotDoughnut/firecore-game", default-features = false, features = ["battle", "ser", "static-link"] }
 laminar = "0.5"
 simple_logger = "*"
 

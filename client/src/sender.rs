@@ -2,11 +2,23 @@ use std::{net::SocketAddr, time::Instant};
 
 use common::{
     game::{
-        battle::{client::{BattleClient, BattleEndpoint}, gui::BattlePlayerGui, message::ServerMessage},
+        battle::{
+            client::{BattleClient, BattleEndpoint},
+            message::ServerMessage,
+        },
+        battle_cli::clients::gui::BattlePlayerGui,
         deps::ser,
-        log::{debug, info},
-        pokedex::pokemon::{
-            dex::pokedex_len, instance::PokemonInstance, party::PokemonParty, stat::StatSet,
+        log::info,
+        pokedex::{
+            Dex,
+            pokemon::{
+                Pokedex,
+                instance::PokemonInstance,
+                party::PokemonParty,
+                stat::StatSet,
+                PokemonId
+            },
+            trainer::TrainerData,
         },
         tetra::Context,
         util::{date, Entity},
@@ -28,10 +40,9 @@ impl BattleConnection {
     pub fn connect(address: SocketAddr, name: Option<String>) -> Self {
         let server = SocketAddr::new(address.ip(), SERVER_PORT);
         let client = SocketAddr::new(
-            local_ipaddress::get().unwrap().parse().unwrap(),
+            common::ip().unwrap(),
             address.port(),
         );
-        // let client = address;
 
         let mut socket = Socket::bind(client).unwrap();
         info!("Connected on {}", client);
@@ -72,7 +83,7 @@ impl BattleConnection {
                                 let mut rand = rand::thread_rng();
 
                                 for _ in 0..pokemon.capacity() {
-                                    let id = rand.gen_range(1..pokedex_len());
+                                    let id = rand.gen_range(1..Pokedex::len() as PokemonId);
                                     pokemon.push(PokemonInstance::generate_with_level(
                                         id,
                                         50,
@@ -86,7 +97,11 @@ impl BattleConnection {
                                     &NetClientMessage::Connect(
                                         Player {
                                             id: name.parse().unwrap(),
-                                            name: self.name.take().unwrap_or(name),
+                                            trainer: TrainerData {
+                                                npc_type: "rival".parse().unwrap(),
+                                                prefix: "Trainer".to_owned(),
+                                                name: self.name.take().unwrap_or(name),
+                                            },
                                             party: pokemon,
                                             client: NetBattleClient(self.client),
                                         }
@@ -98,7 +113,6 @@ impl BattleConnection {
                         }
                     }
                 }
-                SocketEvent::Connect(addr) => debug!("Received connect."),
                 _ => (),
             }
         }
@@ -110,10 +124,10 @@ impl BattleConnection {
             match event {
                 SocketEvent::Packet(packet) => {
                     if let Ok(message) = ser::deserialize::<ServerMessage>(packet.payload()) {
-                        debug!("Received server message {:?}", message);
                         let message_eq = matches!(message, ServerMessage::Opponents(..));
                         gui.give_client(message);
                         if message_eq {
+                            gui.start(true);
                             gui.on_begin(ctx);
                             gui.player
                                 .renderer
@@ -134,16 +148,11 @@ impl BattleConnection {
     pub fn send(&mut self, gui: &mut BattlePlayerGui) {
         while let Some(message) = gui.give_server() {
             match ser::serialize(&message) {
-                Ok(bytes) => match self
-                    .socket
-                    .send(Packet::reliable_unordered(self.server, bytes))
-                {
-                    Ok(()) => debug!(
-                        "Sent message to server with address {}: {:?}",
-                        self.client, message
-                    ),
-                    Err(err) => todo!("{}", err),
-                },
+                Ok(bytes) => {
+                    if let Err(err) = self.socket.send(Packet::reliable_unordered(self.server, bytes)) {
+                        todo!("{}", err)
+                    }
+                }
                 Err(err) => todo!("{}", err),
             }
         }

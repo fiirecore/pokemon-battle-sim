@@ -1,6 +1,6 @@
 extern crate firecore_battle_net as common;
 
-use std::{net::SocketAddr, rc::Rc};
+use std::{cell::UnsafeCell, net::SocketAddr, rc::Rc};
 
 use crossbeam_channel::{Receiver, Sender};
 
@@ -13,17 +13,16 @@ use common::{
             pokemon::BattlePlayer,
             Battle, BattleHost,
         },
-        deps::ser,
-        log::{debug, error, info, warn},
+        deps::{ser, hash::HashMap},
+        log::{error, info, warn},
         pokedex::{
             moves::usage::script::engine,
             pokemon::instance::BorrowedPokemon,
         },
     },
     laminar::{Packet, Socket, SocketEvent},
-    NetBattleClient, NetClientMessage, NetServerMessage, Player,
+    NetClientMessage, NetServerMessage, Player,
 };
-use dashmap::DashMap;
 
 pub fn main() {
 
@@ -32,7 +31,7 @@ pub fn main() {
     let mut players = Vec::with_capacity(2);
     let mut battle = Battle::new(engine());
 
-    let address = SocketAddr::new("192.168.1.11".parse().unwrap(), common::SERVER_PORT);
+    let address = SocketAddr::new(common::ip().unwrap(), common::SERVER_PORT);
 
     let mut socket = Socket::bind(address).unwrap();
 
@@ -78,7 +77,7 @@ pub fn main() {
 
     info!("Starting battle.");
 
-    let map = Rc::new(DashMap::new());
+    let map = Rc::new(UnsafeCell::new(HashMap::new()));
 
     battle.battle(BattleHost::new(
         BattleData {
@@ -97,62 +96,44 @@ pub fn main() {
 
     while battle.is_some() {
         battle.update();
-        std::thread::sleep(std::time::Duration::from_millis(3))
+        std::thread::sleep(std::time::Duration::from_millis(3));
     }
 
     info!("closing server.");
 }
 
+type SharedReceiver = Rc<UnsafeCell<HashMap<SocketAddr, ClientMessage>>>;
+
 fn player(
     player: Player,
     sender: Sender<Packet>,
     receiver: Receiver<SocketEvent>,
-    map: Rc<DashMap<SocketAddr, ClientMessage>>,
+    map: SharedReceiver,
 ) -> BattlePlayer {
     BattlePlayer::new(
         player.id,
-        &player.name,
+        Some(player.trainer),
         player
             .party
             .into_iter()
             .map(BorrowedPokemon::Owned)
             .collect(),
-        Box::new(NetBattleClientInto::from(player.client, sender, receiver, map)),
+        Box::new(NetBattleClientInto {
+            addr: player.client.0, sender, receiver, map 
+        }),
         1,
     )
 }
 
-// enum ServerState {
-//     Connecting,
-//     Battle,
-// }
-
-impl NetBattleClientInto {
-    pub fn from(
-        cli: NetBattleClient,
-        sender: Sender<Packet>,
-        receiver: Receiver<SocketEvent>,
-        map: Rc<DashMap<SocketAddr, ClientMessage>>,
-    ) -> Self {
-        Self {
-            sender,
-            receiver,
-            addr: cli.0,
-            map,
-        }
-    }
-}
-
 pub struct NetBattleClientInto {
+    addr: SocketAddr,
     receiver: Receiver<SocketEvent>,
     sender: Sender<Packet>,
-    addr: SocketAddr,
-    map: Rc<DashMap<SocketAddr, ClientMessage>>,
+    map: SharedReceiver,
 }
 
 impl BattleEndpoint for NetBattleClientInto {
     fn give_client(&mut self, message: ServerMessage) {
-        debug!("Sending message {:?} to client at {}", message, self.addr);
         self.sender
             .send(Packet::reliable_unordered(
                 self.addr,
@@ -168,8 +149,7 @@ impl BattleClient for NetBattleClientInto {
             match event {
                 SocketEvent::Packet(packet) => match ser::deserialize(packet.payload()) {
                     Ok(message) => {
-                        debug!("Received message from {}: {:?}", self.addr, message);
-                        self.map.insert(packet.addr(), message);
+                        unsafe{self.map.get().as_mut().unwrap()}.insert(packet.addr(), message);
                     }
                     Err(err) => warn!(
                         "Could not deserialize client message from {} with error {}",
@@ -179,6 +159,6 @@ impl BattleClient for NetBattleClientInto {
                 _ => (),
             }
         }
-        self.map.remove(&self.addr).map(|(_, m)| m)
+        unsafe{self.map.get().as_mut().unwrap()}.remove(&self.addr)
     }
 }

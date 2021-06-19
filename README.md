@@ -1,0 +1,1 @@
+# Online Battling for Pokemon FireRed

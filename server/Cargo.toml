@@ -9,4 +9,3 @@ edition = "2018"
 [dependencies]
 firecore-battle-net = {path = ".."}
 crossbeam-channel = "0.5"
-dashmap = "4.0"

@@ -1,9 +1,11 @@
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 extern crate firecore_battle_net as common;
 
 use std::{net::SocketAddr, rc::Rc};
 
 use common::game::{
-    battle::gui::BattlePlayerGui,
+    battle_cli::clients::gui::BattlePlayerGui,
     graphics::draw_text_left,
     gui::{bag::BagGui, party::PartyGui},
     log::{info, warn},
@@ -87,13 +89,13 @@ impl State for GameState {
         init::configuration()?;
         init::text(
             ctx,
-            ser::deserialize(include_bytes!("../../../pokemon-game/build/data/fonts.bin"))
+            ser::deserialize(include_bytes!("../fonts.bin"))
                 .unwrap(),
         )?;
         init::pokedex(ctx, ser::deserialize(common::DEX_BYTES).unwrap())
     }
 
-    fn end(&mut self, ctx: &mut Context) -> Result {
+    fn end(&mut self, _ctx: &mut Context) -> Result {
         Ok(())
     }
 
@@ -141,8 +143,7 @@ impl State for GameState {
                     // }
                     ConnectState::Connected => {
                         connection.receive(&mut self.gui, ctx);
-                        self.gui
-                            .update(ctx, time::get_delta_time(ctx).as_secs_f32());
+                        self.gui.update(ctx, time::get_delta_time(ctx).as_secs_f32(), false);
                         connection.send(&mut self.gui);
                     }
                 }
@@ -174,7 +175,7 @@ impl State for GameState {
         Ok(())
     }
 
-    fn event(&mut self, ctx: &mut Context, event: Event) -> Result {
+    fn event(&mut self, _ctx: &mut Context, _event: Event) -> Result {
         Ok(())
     }
 }

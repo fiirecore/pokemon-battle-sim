@@ -2,14 +2,14 @@ pub extern crate firecore_game as game;
 pub extern crate simple_logger as logger;
 pub extern crate laminar;
 
-pub static DEX_BYTES: &[u8] = include_bytes!("../../pokemon-game/build/data/dex.bin");
+pub static DEX_BYTES: &[u8] = include_bytes!("../dex.bin");
 
 pub const SERVER_PORT: u16 = 14191;
 
 use std::net::SocketAddr;
 use game::pokedex::{
     pokemon::party::PokemonParty,
-    moves::target::PlayerId,
+    trainer::{TrainerId, TrainerData},
 };
 use serde::{Deserialize, Serialize};
 
@@ -27,8 +27,8 @@ pub enum NetServerMessage {
 
 #[derive(Deserialize, Serialize)]
 pub struct Player {
-    pub id: PlayerId,
-    pub name: String,
+    pub id: TrainerId,
+    pub trainer: TrainerData,
     pub party: PokemonParty,
     pub client: NetBattleClient,
 }
@@ -43,79 +43,29 @@ pub fn init() {
 
 pub fn pokedex_no_ctx(dex: game::pokedex::serialize::SerializedDex) {
 
-    use game::{
-        deps::{self, hash::HashMap},
-        pokedex,
-    };
+    use game::pokedex::Dex;
 
-    let mut pokedex = HashMap::with_capacity(dex.pokemon.len());
+    game::pokedex::pokemon::Pokedex::set(dex.pokemon.into_iter().map(|p| (p.pokemon.id, p.pokemon)).collect());
 
-    pokedex.insert(
-        <pokedex::pokemon::Pokemon as deps::borrow::Identifiable>::UNKNOWN, 
-        pokedex::pokemon::Pokemon {
-            id: <pokedex::pokemon::Pokemon as deps::borrow::Identifiable>::UNKNOWN,
-            name: "Unknown".to_string(),
-            primary_type: pokedex::types::PokemonType::default(),
-            secondary_type: None,
-            base: Default::default(),
-            data: pokedex::pokemon::data::PokedexData {
-                species: "Unknown".to_string(),
-                height: 0,
-                weight: 0,
-            },
-            training: pokedex::pokemon::data::Training {
-                base_exp: 0,
-                growth_rate: Default::default(),
-            },
-            breeding: pokedex::pokemon::data::Breeding {
-                gender: None,
-            },
-            moves: Vec::new(),
-        }
-    );
+    game::pokedex::moves::Movedex::set(dex.moves.into_iter().map(|m| (m.pokemon_move.id, m.pokemon_move)).collect());
 
-	for pokemon in dex.pokemon {	
-		pokedex.insert(pokemon.pokemon.id, pokemon.pokemon);
-	}
-
-    pokedex::pokemon::dex::set(pokedex);
-
-	let mut movedex = HashMap::with_capacity(dex.moves.len());
-
-	for serialized_move in dex.moves {
-        let pmove = serialized_move.pokemon_move;
-		movedex.insert(pmove.id, pmove);
-	}
-
-    pokedex::moves::dex::set(movedex);
-
-    let mut itemdex = HashMap::with_capacity(dex.items.len());
-
-    for item in dex.items {
-        itemdex.insert(item.item.id, item.item);
-    }
-
-    pokedex::item::dex::set(itemdex);
+    game::pokedex::item::Itemdex::set(dex.items.into_iter().map(|i| (i.item.id, i.item)).collect());
 
 }
 
-// 
+use std::net::{UdpSocket, IpAddr};
 
-// fn main() -> Result {
-//     match std::env::args().skip(1).next() {
-//         Some(t) => match t.trim_end() {
-//             "c" | "client" => client::main(),
-//             "s" | "server" => Ok(server::main()),
-//             _ => {
-//                 info!("Could not recognize argument {}", t);
-//                 Ok(())
-//             },
-//         },
-//         None => {
-//             info!("Could not run server / client because neither was specified");
-//             Ok(())
-//         }
-//     }
-    
-//     // client::main()
-// }
+/// get the local ip address, return an `Option<String>`. when it fail, return `None`.
+pub fn ip() -> Option<IpAddr> {
+    let socket = match UdpSocket::bind("0.0.0.0:0") {
+        Ok(s) => s,
+        Err(_) => return None,
+    };
+
+    match socket.connect("8.8.8.8:80") {
+        Ok(()) => (),
+        Err(_) => return None,
+    };
+
+    socket.local_addr().ok().map(|addr| addr.ip())
+}
