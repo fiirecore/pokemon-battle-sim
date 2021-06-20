@@ -1,0 +1,11 @@
+[package]
+name = "dex-builder-mini"
+version = "0.1.0"
+authors = ["Rhys Holloway <rhyswilliamholloway@gmail.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+firecore-pokedex-game = { git = "https://github.com/DoNotDoughnut/firecore-game", package = "firecore-pokedex-game" }
+firecore-dependencies = { git = "https://github.com/DoNotDoughnut/firecore-game", package = "firecore-dependencies", features = ["ser", "hash"] }

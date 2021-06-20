@@ -228,6 +228,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "dex-builder-mini"
+version = "0.1.0"
+dependencies = [
+ "firecore-dependencies",
+ "firecore-pokedex-game",
+]
+
+[[package]]
 name = "dirs-next"
 version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -322,7 +330,7 @@ dependencies = [
 name = "firecore-battle-net"
 version = "0.1.0"
 dependencies = [
- "firecore-game",
+ "firecore-pokedex",
  "laminar",
  "serde",
  "simple_logger",
@@ -685,6 +693,7 @@ name = "pokemon-battle-client"
 version = "0.1.0"
 dependencies = [
  "firecore-battle-net",
+ "firecore-game",
  "rand",
  "winres",
 ]
@@ -694,7 +703,10 @@ name = "pokemon-battle-server"
 version = "0.1.0"
 dependencies = [
  "crossbeam-channel",
+ "dex-builder-mini",
+ "firecore-battle",
  "firecore-battle-net",
+ "firecore-dependencies",
 ]
 
 [[package]]

@@ -1,24 +1,25 @@
 extern crate firecore_battle_net as common;
+extern crate firecore_battle as battle;
+extern crate firecore_dependencies as deps;
 
 use std::{cell::UnsafeCell, net::SocketAddr, rc::Rc};
 
 use crossbeam_channel::{Receiver, Sender};
 
+use battle::{
+    client::{BattleClient, BattleEndpoint},
+    data::{BattleData, BattleType},
+    message::{ClientMessage, ServerMessage},
+    pokemon::BattlePlayer,
+    Battle, BattleHost,
+};
+
+use deps::{ser, hash::HashMap, log::{error, info, warn}};
+
 use common::{
-    game::{
-        battle::{
-            client::{BattleClient, BattleEndpoint},
-            data::{BattleData, BattleType},
-            message::{ClientMessage, ServerMessage},
-            pokemon::BattlePlayer,
-            Battle, BattleHost,
-        },
-        deps::{ser, hash::HashMap},
-        log::{error, info, warn},
-        pokedex::{
-            moves::usage::script::engine,
-            pokemon::instance::BorrowedPokemon,
-        },
+    pokedex::{
+        moves::usage::script::engine,
+        pokemon::instance::BorrowedPokemon,
     },
     laminar::{Packet, Socket, SocketEvent},
     NetClientMessage, NetServerMessage, Player,
@@ -26,7 +27,8 @@ use common::{
 
 pub fn main() {
 
-    common::init();
+    common::logger::SimpleLogger::new().init().unwrap();
+    pokedex_init_mini(ser::deserialize(include_bytes!("../dex.bin")).unwrap());
 
     let mut players = Vec::with_capacity(2);
     let mut battle = Battle::new(engine());
@@ -161,4 +163,17 @@ impl BattleClient for NetBattleClientInto {
         }
         unsafe{self.map.get().as_mut().unwrap()}.remove(&self.addr)
     }
+}
+
+use common::pokedex::{
+    Dex,
+    pokemon::{PokemonId, Pokemon, Pokedex},
+    moves::{MoveId, Move, Movedex},
+    item::{ItemId, Item, Itemdex},
+};
+
+pub fn pokedex_init_mini(dex: (HashMap<PokemonId, Pokemon>, HashMap<MoveId, Move>, HashMap<ItemId, Item>)) {
+    Pokedex::set(dex.0);
+    Movedex::set(dex.1);
+    Itemdex::set(dex.2);
 }

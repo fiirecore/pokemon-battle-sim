@@ -9,6 +9,7 @@ build = "build.rs"
 
 [dependencies]
 firecore-battle-net = { path = ".." }
+firecore-game = { git = "https://github.com/DoNotDoughnut/firecore-game", default-features = false, features = ["battle", "ser", "static-link"] }
 rand = "0.8"
 
 [build-dependencies]

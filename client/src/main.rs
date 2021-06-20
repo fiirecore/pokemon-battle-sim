@@ -4,7 +4,7 @@ extern crate firecore_battle_net as common;
 
 use std::{net::SocketAddr, rc::Rc};
 
-use common::game::{
+use firecore_game::{
     battle_cli::clients::gui::BattlePlayerGui,
     graphics::draw_text_left,
     gui::{bag::BagGui, party::PartyGui},
@@ -33,7 +33,7 @@ const SCALE: f32 = 3.0;
 const TITLE: &str = "Pokemon Battle";
 
 fn main() -> Result {
-    common::init();
+    common::logger::SimpleLogger::new().init().unwrap();
     ContextBuilder::new(
         TITLE,
         (WIDTH * SCALE) as _,
@@ -92,7 +92,7 @@ impl State for GameState {
             ser::deserialize(include_bytes!("../fonts.bin"))
                 .unwrap(),
         )?;
-        init::pokedex(ctx, ser::deserialize(common::DEX_BYTES).unwrap())
+        init::pokedex(ctx, ser::deserialize(include_bytes!("../dex.bin")).unwrap())
     }
 
     fn end(&mut self, _ctx: &mut Context) -> Result {

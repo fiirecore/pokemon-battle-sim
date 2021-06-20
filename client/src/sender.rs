@@ -1,28 +1,29 @@
 use std::{net::SocketAddr, time::Instant};
 
-use common::{
-    game::{
-        battle::{
-            client::{BattleClient, BattleEndpoint},
-            message::ServerMessage,
-        },
-        battle_cli::clients::gui::BattlePlayerGui,
-        deps::ser,
-        log::info,
-        pokedex::{
-            Dex,
-            pokemon::{
-                Pokedex,
-                instance::PokemonInstance,
-                party::PokemonParty,
-                stat::StatSet,
-                PokemonId
-            },
-            trainer::TrainerData,
-        },
-        tetra::Context,
-        util::{date, Entity},
+use firecore_game::{
+    battle::{
+        client::{BattleClient, BattleEndpoint},
+        message::ServerMessage,
     },
+    battle_cli::clients::gui::BattlePlayerGui,
+    deps::ser,
+    log::info,
+    tetra::Context,
+    util::{date, Entity},
+    pokedex::{
+        Dex,
+        pokemon::{
+            Pokedex,
+            instance::PokemonInstance,
+            party::PokemonParty,
+            stat::StatSet,
+            PokemonId
+        },
+        trainer::TrainerData,
+    },
+};
+
+use common::{
     laminar::{Packet, Socket, SocketEvent},
     NetBattleClient, NetClientMessage, NetServerMessage, Player, SERVER_PORT,
 };

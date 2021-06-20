@@ -1,13 +1,11 @@
-pub extern crate firecore_game as game;
+pub extern crate firecore_pokedex as pokedex;
 pub extern crate simple_logger as logger;
 pub extern crate laminar;
-
-pub static DEX_BYTES: &[u8] = include_bytes!("../dex.bin");
 
 pub const SERVER_PORT: u16 = 14191;
 
 use std::net::SocketAddr;
-use game::pokedex::{
+use pokedex::{
     pokemon::party::PokemonParty,
     trainer::{TrainerId, TrainerData},
 };
@@ -35,23 +33,6 @@ pub struct Player {
 
 #[derive(Deserialize, Serialize)]
 pub struct NetBattleClient(pub SocketAddr);
-
-pub fn init() {
-    simple_logger::SimpleLogger::new().init().unwrap();
-    pokedex_no_ctx(game::deps::ser::deserialize(DEX_BYTES).unwrap());
-}
-
-pub fn pokedex_no_ctx(dex: game::pokedex::serialize::SerializedDex) {
-
-    use game::pokedex::Dex;
-
-    game::pokedex::pokemon::Pokedex::set(dex.pokemon.into_iter().map(|p| (p.pokemon.id, p.pokemon)).collect());
-
-    game::pokedex::moves::Movedex::set(dex.moves.into_iter().map(|m| (m.pokemon_move.id, m.pokemon_move)).collect());
-
-    game::pokedex::item::Itemdex::set(dex.items.into_iter().map(|i| (i.item.id, i.item)).collect());
-
-}
 
 use std::net::{UdpSocket, IpAddr};
 
