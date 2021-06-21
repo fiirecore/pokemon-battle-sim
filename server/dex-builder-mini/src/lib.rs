@@ -1,9 +1,9 @@
-use std::{collections::BTreeMap, fs::write, path::Path};
+use std::{fs::write, path::Path};
 
 use firecore_pokedex_game::{
-    item::{Item, ItemId},
-    moves::{Move, MoveId},
-    pokemon::{Pokemon, PokemonId},
+    item::Item,
+    moves::Move,
+    pokemon::Pokemon,
     serialize::SerializedDex,
 };
 
@@ -21,20 +21,22 @@ pub fn deserialize_normal(path: impl AsRef<Path>) -> SerializedDex {
 pub fn compile_from_normal(dex: SerializedDex, output: impl AsRef<Path>) {
     let output = output.as_ref();
 
-    let data = (
+    let mut data = (
         dex.pokemon
             .into_iter()
-            .map(|p| (p.pokemon.id, p.pokemon))
-            .collect::<BTreeMap<PokemonId, Pokemon>>(),
+            .map(|p| p.pokemon)
+            .collect::<Vec<Pokemon>>(),
         dex.moves
             .into_iter()
-            .map(|m| (m.pokemon_move.id, m.pokemon_move))
-            .collect::<BTreeMap<MoveId, Move>>(),
-        dex.items
-            .into_iter()
-            .map(|i| (i.item.id, i.item))
-            .collect::<BTreeMap<ItemId, Item>>(),
+            .map(|m| m.pokemon_move)
+            .collect::<Vec<Move>>(),
+        dex.items.into_iter().map(|i| i.item).collect::<Vec<Item>>(),
     );
+
+    data.0.sort_by_key(|p| p.id);
+    data.1.sort_by_key(|m| m.id);
+    data.2.sort_by_key(|i| i.id);
+
     let data = firecore_dependencies::ser::serialize(&data)
         .unwrap_or_else(|err| panic!("Could not serialize mini dex binary with error {}", err));
 

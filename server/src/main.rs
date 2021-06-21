@@ -1,7 +1,6 @@
 extern crate firecore_battle_net as common;
 extern crate firecore_dependencies as deps;
 
-use anyhow::Result;
 use dashmap::DashMap;
 use player::BattleServerPlayer;
 
@@ -39,12 +38,14 @@ use common::{
     NetClientMessage, NetServerMessage,
 };
 
+use crate::configuration::Configuration;
+
 type SharedReceiver = Arc<DashMap<Endpoint, VecDeque<ClientMessage>>>;
 
 mod configuration;
 mod player;
 
-fn main() -> Result<()> {
+fn main() {
     // Initialize logger
 
     let logger = SimpleLogger::new();
@@ -54,7 +55,7 @@ fn main() -> Result<()> {
     #[cfg(not(debug_assertions))]
     let logger = logger.with_level(LevelFilter::Info);
 
-    logger.init()?;
+    logger.init().unwrap_or_else(|err| panic!("Could not initialize logger with error {}", err));
 
     // Load configuration
 
@@ -77,7 +78,7 @@ fn main() -> Result<()> {
 
     let (controller, mut processor) = split();
 
-    controller.listen(Transport::Tcp, address)?;
+    controller.listen(Transport::Tcp, address).unwrap_or_else(|err| panic!("Could not listen on network address {} with error {}", address, err));
 
     info!("Listening on port {}", configuration.port);
 
@@ -228,8 +229,6 @@ fn main() -> Result<()> {
     }
 
     info!("closing server.");
-
-    Ok(())
 }
 
 fn send(controller: &NetworkController, endpoint: Endpoint, data: &[u8]) {
@@ -240,22 +239,20 @@ fn send(controller: &NetworkController, endpoint: Endpoint, data: &[u8]) {
 }
 
 use common::pokedex::{
-    item::{Item, ItemId, Itemdex},
-    moves::{Move, MoveId, Movedex},
-    pokemon::{Pokedex, Pokemon, PokemonId},
+    item::{Item, Itemdex},
+    moves::{Move, Movedex},
+    pokemon::{Pokedex, Pokemon},
     Dex,
 };
 
-use crate::configuration::Configuration;
-
 pub fn pokedex_init_mini(
     dex: (
-        HashMap<PokemonId, Pokemon>,
-        HashMap<MoveId, Move>,
-        HashMap<ItemId, Item>,
+        Vec<Pokemon>,
+        Vec<Move>,
+        Vec<Item>,
     ),
 ) {
-    Pokedex::set(dex.0);
-    Movedex::set(dex.1);
-    Itemdex::set(dex.2);
+    Pokedex::set(dex.0.into_iter().map(|p| (p.id, p)).collect());
+    Movedex::set(dex.1.into_iter().map(|m| (m.id, m)).collect());
+    Itemdex::set(dex.2.into_iter().map(|i| (i.id, i)).collect());
 }
