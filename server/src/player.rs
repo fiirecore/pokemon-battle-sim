@@ -1,15 +1,15 @@
 use std::{collections::VecDeque, sync::Arc};
 
-use deps::{log::debug, ser::serialize};
-
 use common::{
     battle::{
         client::{BattleClient, BattleEndpoint},
         message::{ClientMessage, ServerMessage},
         pokemon::BattlePlayer,
     },
+    log::debug,
     net::network::{Endpoint, NetworkController},
     pokedex::pokemon::instance::BorrowedPokemon,
+    ser::serialize,
     uuid::Uuid,
     NetServerMessage, Player,
 };

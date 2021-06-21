@@ -1,5 +1,4 @@
 extern crate firecore_battle_net as common;
-extern crate firecore_dependencies as deps;
 
 use dashmap::DashMap;
 use player::BattleServerPlayer;
@@ -21,15 +20,11 @@ use common::{
         message::ClientMessage,
         Battle, BattleHost,
     },
-    logger::SimpleLogger,
-    net::network::SendStatus,
-    uuid::Uuid,
-};
-
-use deps::{
     hash::HashMap,
-    log::{debug, error, info, warn, LevelFilter},
+    log::{debug, error, info, warn},
+    net::network::SendStatus,
     ser,
+    uuid::Uuid,
 };
 
 use common::{
@@ -46,16 +41,7 @@ mod configuration;
 mod player;
 
 fn main() {
-    // Initialize logger
-
-    let logger = SimpleLogger::new();
-
-    #[cfg(debug_assertions)]
-    let logger = logger.with_level(LevelFilter::Debug);
-    #[cfg(not(debug_assertions))]
-    let logger = logger.with_level(LevelFilter::Info);
-
-    logger.init().unwrap_or_else(|err| panic!("Could not initialize logger with error {}", err));
+    common::init();
 
     // Load configuration
 
@@ -78,7 +64,18 @@ fn main() {
 
     let (controller, mut processor) = split();
 
-    controller.listen(common::PROTOCOL, address).unwrap_or_else(|err| panic!("Could not listen on network address {} with error {}", address, err));
+    let (resource_id, _) = controller
+        .listen(common::PROTOCOL, address)
+        .unwrap_or_else(|err| {
+            panic!(
+                "Could not listen on network address {} with error {}",
+                address, err
+            )
+        });
+
+    while controller.is_ready(resource_id).unwrap_or_default() {
+        thread::sleep(Duration::from_micros(100));
+    }
 
     info!("Listening on port {}", configuration.port);
 
@@ -90,11 +87,14 @@ fn main() {
     while players.len() < 2 {
         processor.process_poll_events_until_timeout(Duration::from_millis(5), |event| {
             match event {
-                NetEvent::Accepted(endpoint, _) => send(
-                    &controller,
-                    endpoint,
-                    &ser::serialize(&NetServerMessage::CanConnect(true)).unwrap(),
-                ),
+                NetEvent::Accepted(endpoint, ..) => {
+                    info!("Client connected from endpoint {}", endpoint);
+                    send(
+                        &controller,
+                        endpoint,
+                        &ser::serialize(&NetServerMessage::CanConnect(true)).unwrap(),
+                    );
+                }
                 NetEvent::Message(endpoint, bytes) => {
                     match ser::deserialize::<NetClientMessage>(bytes) {
                         Ok(message) => match message {
@@ -169,7 +169,8 @@ fn main() {
             controller_handle.send(*endpoint.key(), data);
         }
         running_handle.store(false, Ordering::Relaxed);
-    }).unwrap();
+    })
+    .unwrap();
 
     // Handle incoming messages
 
@@ -245,13 +246,7 @@ use common::pokedex::{
     Dex,
 };
 
-pub fn pokedex_init_mini(
-    dex: (
-        Vec<Pokemon>,
-        Vec<Move>,
-        Vec<Item>,
-    ),
-) {
+pub fn pokedex_init_mini(dex: (Vec<Pokemon>, Vec<Move>, Vec<Item>)) {
     Pokedex::set(dex.0.into_iter().map(|p| (p.id, p)).collect());
     Movedex::set(dex.1.into_iter().map(|m| (m.id, m)).collect());
     Itemdex::set(dex.2.into_iter().map(|i| (i.id, i)).collect());

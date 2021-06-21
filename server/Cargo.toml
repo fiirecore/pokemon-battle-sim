@@ -1,18 +1,17 @@
 [package]
 name = "pokemon-battle-server"
-version = "0.2.2"
+version = "0.2.3"
 authors = ["Rhys Holloway <rhyswilliamholloway@gmail.com>"]
 edition = "2018"
 build = "build.rs"
 
 [dependencies]
-firecore-battle-net = {path = ".."}
-firecore-dependencies = { git = "https://github.com/DoNotDoughnut/firecore-game", package = "firecore-dependencies", features = ["ser", "hash", "log"] }
+firecore-battle-net = { path=".." }
 ctrlc = "3.1"
 toml = "0.5"
-serde = { version = "1.0", features = ["derive"] }
+serde = { version="1.0", features=["derive"] }
 dashmap = "4.0"
 
 [build-dependencies]
-dex-builder-mini = { path = "./dex-builder-mini" }
+dex-builder-mini = { path="./dex-builder-mini" }
 winres = "0.1"

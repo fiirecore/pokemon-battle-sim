@@ -5,8 +5,11 @@ pub extern crate simple_logger as logger;
 pub extern crate rand;
 pub extern crate uuid;
 pub extern crate parking_lot as sync;
+pub use firecore_dependencies::*;
 
 use battle::message::{ClientMessage, ServerMessage};
+use logger::SimpleLogger;
+use log::LevelFilter;
 use net::network::Transport;
 use pokedex::{pokemon::party::PokemonParty, trainer::TrainerData};
 use serde::{Deserialize, Serialize};
@@ -34,4 +37,19 @@ pub enum NetServerMessage<'a> {
 pub struct Player {
     pub trainer: TrainerData,
     pub party: PokemonParty,
+}
+
+pub fn init() {
+
+    // Initialize logger
+
+    let logger = SimpleLogger::new();
+
+    #[cfg(debug_assertions)]
+    let logger = logger.with_level(LevelFilter::Debug);
+    #[cfg(not(debug_assertions))]
+    let logger = logger.with_level(LevelFilter::Info);
+
+    logger.init().unwrap_or_else(|err| panic!("Could not initialize logger with error {}", err));
+
 }

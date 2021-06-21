@@ -17,7 +17,7 @@ use game::{
 };
 
 use common::{
-    net::network::{split, Endpoint, NetEvent, NetworkController, SendStatus},
+    net::network::{split, Endpoint, NetEvent, NetworkController, NetworkProcessor, SendStatus},
     rand::Rng,
     sync::Mutex,
     uuid::Uuid,
@@ -28,6 +28,7 @@ use crate::ConnectState;
 
 pub struct BattleConnection {
     controller: NetworkController,
+    processor: Option<NetworkProcessor>,
     endpoint: Endpoint,
     messages: Arc<Mutex<VecDeque<Vec<u8>>>>,
     name: Option<String>,
@@ -35,40 +36,47 @@ pub struct BattleConnection {
 
 impl BattleConnection {
     pub fn connect(address: SocketAddr, name: Option<String>) -> Self {
-        let (controller, mut processor) = split();
+        let (controller, processor) = split();
 
-        let (server, address) = controller.connect(common::PROTOCOL, address).unwrap();
+        let (endpoint, address) = controller.connect(common::PROTOCOL, address).unwrap();
 
-        info!("Connected to {}", address);
-
-        let messages = Arc::new(Mutex::new(VecDeque::new()));
-
-        let receiver = messages.clone();
-
-        std::thread::spawn(move || loop {
-            processor.process_poll_event(None, |event| match event {
-                NetEvent::Connected(endpoint, ..) => info!("Connected to endpoint: {}", endpoint),
-                NetEvent::Accepted(endpoint, id) => {
-                    debug!("Accepted to endpoint: {} with resource id {}", endpoint, id)
-                }
-                NetEvent::Message(endpoint, bytes) => {
-                    if endpoint == server {
-                        receiver.lock().push_back(bytes.to_owned());
-                    } else {
-                        warn!("Received packets from non server endpoint!")
-                    }
-                }
-                NetEvent::Disconnected(endpoint) => {
-                    info!("Disconnected from endpoint: {}", endpoint)
-                }
-            });
-        });
+        info!("Connecting to {}", address);
 
         Self {
             controller,
-            endpoint: server,
-            messages,
+            processor: Some(processor),
+            endpoint,
+            messages: Arc::new(Mutex::new(VecDeque::new())),
             name,
+        }
+    }
+
+    pub fn wait_connect(&mut self) -> bool {
+        let server = self.endpoint;
+        let mut processor = self.processor.take().unwrap();
+        let receiver = self.messages.clone();
+        if self.controller.is_ready(self.endpoint.resource_id()).unwrap_or_default() {
+            std::thread::spawn(move || loop {
+                processor.process_poll_event(None, |event| match event {
+                    NetEvent::Connected(..) => (),
+                    NetEvent::Accepted(endpoint, id) => {
+                        debug!("Accepted to endpoint: {} with resource id {}", endpoint, id)
+                    }
+                    NetEvent::Message(endpoint, bytes) => {
+                        if endpoint == server {
+                            receiver.lock().push_back(bytes.to_owned());
+                        } else {
+                            warn!("Received packets from non server endpoint!")
+                        }
+                    }
+                    NetEvent::Disconnected(endpoint) => {
+                        info!("Disconnected from endpoint: {}", endpoint)
+                    }
+                });
+            });
+            true
+        } else {
+            false
         }
     }
 

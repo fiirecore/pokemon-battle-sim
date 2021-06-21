@@ -38,10 +38,7 @@ const SCALE: f32 = 3.0;
 const TITLE: &str = "Pokemon Battle";
 
 fn main() -> Result {
-    common::logger::SimpleLogger::new()
-        .with_level(game::log::LevelFilter::Debug)
-        .init()
-        .unwrap();
+    common::init();
     ContextBuilder::new(TITLE, (WIDTH * SCALE) as _, (HEIGHT * SCALE) as _)
         .vsync(true)
         .resizable(true)
@@ -58,6 +55,7 @@ pub enum States {
 }
 
 pub enum ConnectState {
+    Connecting,
     WaitConfirm,
     // WaitBegin,
     Closed,
@@ -128,7 +126,7 @@ impl State for GameState {
                                         addr,
                                         strings.next().map(ToOwned::to_owned),
                                     ),
-                                    ConnectState::WaitConfirm,
+                                    ConnectState::Connecting,
                                 );
                             }
                             Err(err) => {
@@ -144,6 +142,9 @@ impl State for GameState {
                 }
             }
             States::Connected(connection, state) => match state {
+                ConnectState::Connecting => if connection.wait_connect() {
+                    *state = ConnectState::WaitConfirm;
+                }
                 ConnectState::WaitConfirm => if let Some(connected) = connection.wait_confirm() {
                     *state = connected;
                 }

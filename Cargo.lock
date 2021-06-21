@@ -336,6 +336,7 @@ name = "firecore-battle-net"
 version = "0.2.1"
 dependencies = [
  "firecore-battle",
+ "firecore-dependencies",
  "firecore-pokedex",
  "message-io",
  "parking_lot",
@@ -814,7 +815,7 @@ dependencies = [
 
 [[package]]
 name = "pokemon-battle-client"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "firecore-battle-net",
  "firecore-game",
@@ -823,13 +824,12 @@ dependencies = [
 
 [[package]]
 name = "pokemon-battle-server"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "ctrlc",
  "dashmap",
  "dex-builder-mini",
  "firecore-battle-net",
- "firecore-dependencies",
  "serde",
  "toml",
  "winres",

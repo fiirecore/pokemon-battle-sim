@@ -15,18 +15,15 @@ panic = "abort"
 codegen-units = 1
 
 [dependencies]
-firecore-pokedex = { git = "https://github.com/DoNotDoughnut/firecore-game", package = "firecore-pokedex" }
-firecore-battle = { git = "https://github.com/DoNotDoughnut/firecore-game", package = "firecore-battle" }
-serde = { version = "1.0", features = ["derive"] }
-message-io = { version = "0.14", features = ["tcp"], default-features = false }
+firecore-pokedex = { git="https://github.com/DoNotDoughnut/firecore-game", package="firecore-pokedex" }
+firecore-battle = { git="https://github.com/DoNotDoughnut/firecore-game", package="firecore-battle" }
+firecore-dependencies = { git="https://github.com/DoNotDoughnut/firecore-game", package="firecore-dependencies", features=["ser", "hash", "log"] }
+serde = { version="1.0", features=["derive"] }
+message-io = { version="0.14", features=["tcp"], default-features=false }
 simple_logger = "1"
 parking_lot = "0.11"
 rand = "0.8"
-uuid = { version = "0.8", features = ["serde", "v4"] }
+uuid = { version="0.8", features=["serde", "v4"] }
 
 [workspace]
-members = [
-    "client",
-    "server",
-    "server/dex-builder-mini"
-]
+members = ["client", "server", "server/dex-builder-mini"]

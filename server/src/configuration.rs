@@ -1,4 +1,4 @@
-use deps::log::{error, info};
+use common::log::{error, info};
 use serde::{Deserialize, Serialize};
 use std::{
     fs::{read_to_string, write},
