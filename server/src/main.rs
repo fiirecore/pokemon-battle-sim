@@ -26,7 +26,6 @@ use common::{
     net::network::{split, Endpoint, NetEvent, NetworkController},
     pokedex::moves::usage::script::engine,
     ser,
-    uuid::Uuid,
     NetClientMessage, NetServerMessage,
 };
 
