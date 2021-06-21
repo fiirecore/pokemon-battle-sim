@@ -6,12 +6,15 @@ pub extern crate rand;
 pub extern crate uuid;
 pub extern crate parking_lot as sync;
 
-pub const DEFAULT_PORT: u16 = 28528;
-
 use battle::message::{ClientMessage, ServerMessage};
+use net::network::Transport;
 use pokedex::{pokemon::party::PokemonParty, trainer::TrainerData};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
+
+pub const DEFAULT_PORT: u16 = 28528;
+
+pub const PROTOCOL: Transport = Transport::Tcp;
 
 #[derive(Debug, Deserialize, Serialize)]
 pub enum NetClientMessage {

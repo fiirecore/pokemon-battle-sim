@@ -9,6 +9,8 @@ use std::{
 pub struct Configuration {
     #[serde(default = "default_port")]
     pub port: u16,
+    #[serde(default = "default_battle_size")]
+    pub battle_size: u8,
 }
 
 impl Configuration {
@@ -64,10 +66,15 @@ impl Default for Configuration {
     fn default() -> Self {
         Self {
             port: default_port(),
+            battle_size: default_battle_size(),
         }
     }
 }
 
 pub const fn default_port() -> u16 {
     common::DEFAULT_PORT
+}
+
+pub const fn default_battle_size() -> u8 {
+    1
 }

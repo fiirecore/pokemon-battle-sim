@@ -17,13 +17,11 @@ use game::{
 };
 
 use common::{
-    net::network::{split, Endpoint, NetEvent, NetworkController, SendStatus, Transport},
+    net::network::{split, Endpoint, NetEvent, NetworkController, SendStatus},
     rand::Rng,
     sync::Mutex,
     uuid::Uuid,
-    NetClientMessage,
-    NetServerMessage,
-    Player,
+    NetClientMessage, NetServerMessage, Player,
 };
 
 use crate::ConnectState;
@@ -39,7 +37,7 @@ impl BattleConnection {
     pub fn connect(address: SocketAddr, name: Option<String>) -> Self {
         let (controller, mut processor) = split();
 
-        let (server, address) = controller.connect(Transport::Tcp, address).unwrap();
+        let (server, address) = controller.connect(common::PROTOCOL, address).unwrap();
 
         info!("Connected to {}", address);
 
@@ -70,7 +68,6 @@ impl BattleConnection {
             controller,
             endpoint: server,
             messages,
-            // client,
             name,
         }
     }

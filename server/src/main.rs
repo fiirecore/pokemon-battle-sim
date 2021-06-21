@@ -33,7 +33,7 @@ use deps::{
 };
 
 use common::{
-    net::network::{split, Endpoint, NetEvent, NetworkController, Transport},
+    net::network::{split, Endpoint, NetEvent, NetworkController},
     pokedex::moves::usage::script::engine,
     NetClientMessage, NetServerMessage,
 };
@@ -78,7 +78,7 @@ fn main() {
 
     let (controller, mut processor) = split();
 
-    controller.listen(Transport::Tcp, address).unwrap_or_else(|err| panic!("Could not listen on network address {} with error {}", address, err));
+    controller.listen(common::PROTOCOL, address).unwrap_or_else(|err| panic!("Could not listen on network address {} with error {}", address, err));
 
     info!("Listening on port {}", configuration.port);
 
