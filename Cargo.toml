@@ -1,6 +1,6 @@
 [package]
 name = "firecore-battle-net"
-version = "0.2.1"
+version = "0.3.0"
 authors = ["Rhys Holloway <rhyswilliamholloway@gmail.com>"]
 edition = "2018"
 repository = "https://github.com/DoNotDoughnut/pokemon-battle-net"
@@ -20,7 +20,6 @@ firecore-battle = { git="https://github.com/DoNotDoughnut/firecore-game", packag
 firecore-dependencies = { git="https://github.com/DoNotDoughnut/firecore-game", package="firecore-dependencies", features=["ser", "hash", "log"] }
 serde = { version="1.0", features=["derive"] }
 message-io = { version="0.14", features=["tcp"], default-features=false }
-simple_logger = "1"
 parking_lot = "0.11"
 rand = "0.8"
 uuid = { version="0.8", features=["serde", "v4"] }

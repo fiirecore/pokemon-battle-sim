@@ -1,6 +1,6 @@
 [package]
 name = "pokemon-battle-server"
-version = "0.2.3"
+version = "0.2.4"
 authors = ["Rhys Holloway <rhyswilliamholloway@gmail.com>"]
 edition = "2018"
 build = "build.rs"
@@ -10,6 +10,7 @@ firecore-battle-net = { path=".." }
 ctrlc = "3.1"
 toml = "0.5"
 serde = { version="1.0", features=["derive"] }
+simple_logger = "1"
 dashmap = "4.0"
 
 [build-dependencies]

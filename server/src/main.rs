@@ -1,7 +1,7 @@
 extern crate firecore_battle_net as common;
 
 use dashmap::DashMap;
-use player::BattleServerPlayer;
+use simple_logger::SimpleLogger;
 
 use std::{
     collections::VecDeque,
@@ -18,30 +18,38 @@ use common::{
     battle::{
         data::{BattleData, BattleType},
         message::ClientMessage,
-        Battle, BattleHost,
+        Battle,
     },
     hash::HashMap,
-    log::{debug, error, info, warn},
+    log::{debug, error, info, warn, LevelFilter},
     net::network::SendStatus,
-    ser,
-    uuid::Uuid,
-};
-
-use common::{
     net::network::{split, Endpoint, NetEvent, NetworkController},
     pokedex::moves::usage::script::engine,
+    ser,
+    uuid::Uuid,
     NetClientMessage, NetServerMessage,
 };
 
-use crate::configuration::Configuration;
+use crate::{configuration::Configuration, player::BattleServerPlayer};
 
-type SharedReceiver = Arc<DashMap<Endpoint, VecDeque<ClientMessage>>>;
+type Receiver = DashMap<Endpoint, VecDeque<ClientMessage>>;
 
 mod configuration;
 mod player;
 
 fn main() {
-    common::init();
+    // Initialize logger
+
+    let logger = SimpleLogger::new();
+
+    #[cfg(debug_assertions)]
+    let logger = logger.with_level(LevelFilter::Debug);
+    #[cfg(not(debug_assertions))]
+    let logger = logger.with_level(LevelFilter::Info);
+
+    logger
+        .init()
+        .unwrap_or_else(|err| panic!("Could not initialize logger with error {}", err));
 
     // Load configuration
 
@@ -64,7 +72,7 @@ fn main() {
 
     let (controller, mut processor) = split();
 
-    let (resource_id, _) = controller
+    controller
         .listen(common::PROTOCOL, address)
         .unwrap_or_else(|err| {
             panic!(
@@ -73,20 +81,17 @@ fn main() {
             )
         });
 
-    while controller.is_ready(resource_id).unwrap_or_default() {
-        thread::sleep(Duration::from_micros(100));
-    }
-
     info!("Listening on port {}", configuration.port);
 
     let mut players = HashMap::with_capacity(2);
-    let mut battle = Battle::<Uuid>::new(engine());
+    let engine = engine();
 
     // Waiting room
 
     while players.len() < 2 {
-        processor.process_poll_events_until_timeout(Duration::from_millis(5), |event| {
-            match event {
+        processor.process_poll_events_until_timeout(
+            Duration::from_millis(5),
+            |event| match event {
                 NetEvent::Accepted(endpoint, ..) => {
                     info!("Client connected from endpoint {}", endpoint);
                     send(
@@ -107,9 +112,6 @@ fn main() {
                                     );
                                     return;
                                 }
-                                // if let Err(err) = socket.send(Packet::reliable_unordered(packet.addr(), ser::serialize(&NetServerMessage::ConfirmConnect).unwrap())) {
-                                //     error!("{}", err)
-                                // }
                             }
                             NetClientMessage::Game(..) => todo!(),
                         },
@@ -121,8 +123,8 @@ fn main() {
                     players.remove(&endpoint);
                     info!("Endpoint at {} disconnected.", endpoint);
                 }
-            }
-        });
+            },
+        );
     }
 
     // Create battle
@@ -135,7 +137,7 @@ fn main() {
 
     let controller = Arc::new(controller);
 
-    battle.battle(BattleHost::new(
+    let mut battle = Battle::new(
         BattleData {
             type_: BattleType::Trainer,
         },
@@ -149,7 +151,7 @@ fn main() {
             controller.clone(),
             receiver.clone(),
         ),
-    ));
+    );
 
     battle.begin();
 
@@ -164,11 +166,11 @@ fn main() {
     let controller_handle = controller.clone();
 
     ctrlc::set_handler(move || {
-        let data = &ser::serialize(&NetServerMessage::End).unwrap();
-        for endpoint in receiver_handle.iter() {
-            controller_handle.send(*endpoint.key(), data);
-        }
-        running_handle.store(false, Ordering::Relaxed);
+        end_battle(
+            running_handle.as_ref(),
+            receiver_handle.as_ref(),
+            controller_handle.as_ref(),
+        )
     })
     .unwrap();
 
@@ -217,17 +219,12 @@ fn main() {
         }
     }
 
-    while battle.is_some() && running.load(Ordering::Relaxed) {
-        battle.update();
+    while !battle.finished() && running.load(Ordering::Relaxed) {
+        battle.update(&engine);
         thread::sleep(Duration::from_millis(5)); // To - do: only process when messages are received, stay idle and dont loop when not received
     }
 
-    {
-        let message = &ser::serialize(&NetServerMessage::End).unwrap();
-        for endpoint in receiver.iter() {
-            send(&controller, *endpoint.key(), message);
-        }
-    }
+    end_battle(running.as_ref(), receiver.as_ref(), &controller);
 
     info!("closing server.");
 }
@@ -250,4 +247,12 @@ pub fn pokedex_init_mini(dex: (Vec<Pokemon>, Vec<Move>, Vec<Item>)) {
     Pokedex::set(dex.0.into_iter().map(|p| (p.id, p)).collect());
     Movedex::set(dex.1.into_iter().map(|m| (m.id, m)).collect());
     Itemdex::set(dex.2.into_iter().map(|i| (i.id, i)).collect());
+}
+
+fn end_battle(running: &AtomicBool, receiver: &Receiver, controller: &NetworkController) {
+    let data = &ser::serialize(&NetServerMessage::End).unwrap();
+    for endpoint in receiver.iter() {
+        controller.send(*endpoint.key(), data);
+    }
+    running.store(false, Ordering::Relaxed);
 }

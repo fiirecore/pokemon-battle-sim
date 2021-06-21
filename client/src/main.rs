@@ -38,14 +38,15 @@ const SCALE: f32 = 3.0;
 const TITLE: &str = "Pokemon Battle";
 
 fn main() -> Result {
-    common::init();
+
+    game::init::logger();
+
     ContextBuilder::new(TITLE, (WIDTH * SCALE) as _, (HEIGHT * SCALE) as _)
         .vsync(true)
         .resizable(true)
         .show_mouse(true)
         .timestep(Timestep::Variable)
-        .build()
-        .unwrap()
+        .build()?
         .run(GameState::new)
 }
 
@@ -55,7 +56,6 @@ pub enum States {
 }
 
 pub enum ConnectState {
-    Connecting,
     WaitConfirm,
     // WaitBegin,
     Closed,
@@ -126,7 +126,7 @@ impl State for GameState {
                                         addr,
                                         strings.next().map(ToOwned::to_owned),
                                     ),
-                                    ConnectState::Connecting,
+                                    ConnectState::WaitConfirm,
                                 );
                             }
                             Err(err) => {
@@ -142,9 +142,6 @@ impl State for GameState {
                 }
             }
             States::Connected(connection, state) => match state {
-                ConnectState::Connecting => if connection.wait_connect() {
-                    *state = ConnectState::WaitConfirm;
-                }
                 ConnectState::WaitConfirm => if let Some(connected) = connection.wait_confirm() {
                     *state = connected;
                 }
@@ -166,17 +163,16 @@ impl State for GameState {
             match &self.state {
                 States::Connect(ip) => draw_text_left(ctx, &1, ip, &Color::WHITE, 5.0, 5.0),
                 States::Connected(.., connected) => match connected {
-                    ConnectState::WaitConfirm => {
-                        draw_text_left(ctx, &1, "Connecting...", &Color::WHITE, 5.0, 5.0)
-                    }
-                    _ => {
+                    ConnectState::WaitConfirm => draw_text_left(ctx, &1, "Connecting...", &Color::WHITE, 5.0, 5.0),
+                    ConnectState::Connected => {
                         graphics::set_canvas(ctx, self.scaler.canvas());
                         graphics::clear(ctx, Color::BLACK);
                         self.gui.draw(ctx);
                         graphics::reset_transform_matrix(ctx);
                         graphics::reset_canvas(ctx);
                         self.scaler.draw(ctx);
-                    }
+                    },
+                    ConnectState::Closed => draw_text_left(ctx, &1, "Connection Closed", &Color::WHITE, 5.0, 5.0),
                 },
             }
         }

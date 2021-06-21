@@ -14,19 +14,19 @@ use common::{
     NetServerMessage, Player,
 };
 
-use crate::{send, SharedReceiver};
+use crate::{send, Receiver};
 
 pub struct BattleServerPlayer {
     endpoint: Endpoint,
     controller: Arc<NetworkController>,
-    receiver: SharedReceiver,
+    receiver: Arc<Receiver>,
 }
 
 impl BattleServerPlayer {
     pub fn player(
         player: (Endpoint, Player),
         controller: Arc<NetworkController>,
-        receiver: SharedReceiver,
+        receiver: Arc<Receiver>,
     ) -> BattlePlayer<Uuid> {
         receiver.insert(player.0, VecDeque::new());
         BattlePlayer::new(
