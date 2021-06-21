@@ -1,10 +1,17 @@
 # Online Pokemon Battle Engine
 
+![image](https://user-images.githubusercontent.com/14354819/122807735-ca808800-d280-11eb-8b58-8b4d0da4b0ee.png)
+
 ## Installation
 
-1. Install Rust from https://www.rust-lang.org/learn/get-started
+Executables may be provided under [releases](https://github.com/DoNotDoughnut/pokemon-battle-engine/releases), but they may not be up to date.
+It is recommended to build the game.
+
+## Building
+
+1. Install Rust from [here](https://www.rust-lang.org/learn/get-started).
 2. Clone the repository
-3. Run ```cargo build --all``` in the repository folder 
+3. Run ```cargo build --all``` in the repository folder (this may take a few minutes)
 4. Executables will be in the target\debug directory
 
 ## Usage: 
