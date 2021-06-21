@@ -1,5 +1,5 @@
 fn main() {
     winres::WindowsResource::new()
-        .set_icon("../../pokemon-game/build/icon.ico")
+        .set_icon("../icon.ico")
         .compile().unwrap();
 }

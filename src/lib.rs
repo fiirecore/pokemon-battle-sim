@@ -1,52 +1,34 @@
+pub extern crate firecore_battle as battle;
 pub extern crate firecore_pokedex as pokedex;
+pub extern crate message_io as net;
 pub extern crate simple_logger as logger;
-pub extern crate laminar;
+pub extern crate rand;
+pub extern crate uuid;
+pub extern crate parking_lot as sync;
 
-pub const SERVER_PORT: u16 = 14191;
+pub const DEFAULT_PORT: u16 = 28528;
 
-use std::net::SocketAddr;
-use pokedex::{
-    pokemon::party::PokemonParty,
-    trainer::{TrainerId, TrainerData},
-};
+use battle::message::{ClientMessage, ServerMessage};
+use pokedex::{pokemon::party::PokemonParty, trainer::TrainerData};
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
-#[derive(Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub enum NetClientMessage {
-    RequestConnect,
-    Connect(Player)
+    Connect(Player),
+    Game(ClientMessage),
 }
 
-#[derive(Deserialize, Serialize)]
-pub enum NetServerMessage {
-    AcceptConnect,
-    // Begin,
+#[derive(Debug, Deserialize, Serialize)]
+pub enum NetServerMessage<'a> {
+    CanConnect(bool),
+    Begin,
+    End,
+    Game(ServerMessage<'a, Uuid>),
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Player {
-    pub id: TrainerId,
     pub trainer: TrainerData,
     pub party: PokemonParty,
-    pub client: NetBattleClient,
-}
-
-#[derive(Deserialize, Serialize)]
-pub struct NetBattleClient(pub SocketAddr);
-
-use std::net::{UdpSocket, IpAddr};
-
-/// get the local ip address, return an `Option<String>`. when it fail, return `None`.
-pub fn ip() -> Option<IpAddr> {
-    let socket = match UdpSocket::bind("0.0.0.0:0") {
-        Ok(s) => s,
-        Err(_) => return None,
-    };
-
-    match socket.connect("8.8.8.8:80") {
-        Ok(()) => (),
-        Err(_) => return None,
-    };
-
-    socket.local_addr().ok().map(|addr| addr.ip())
 }

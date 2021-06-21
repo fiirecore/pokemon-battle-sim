@@ -1,87 +1,96 @@
-use std::{net::SocketAddr, time::Instant};
+use std::{collections::VecDeque, net::SocketAddr, sync::Arc};
 
-use firecore_game::{
-    battle::{
-        client::{BattleClient, BattleEndpoint},
-        message::ServerMessage,
-    },
+use game::{
+    battle::client::{BattleClient, BattleEndpoint},
     battle_cli::clients::gui::BattlePlayerGui,
     deps::ser,
-    log::info,
-    tetra::Context,
-    util::{date, Entity},
+    log::{debug, info, warn},
     pokedex::{
-        Dex,
         pokemon::{
-            Pokedex,
-            instance::PokemonInstance,
-            party::PokemonParty,
-            stat::StatSet,
-            PokemonId
+            instance::PokemonInstance, party::PokemonParty, stat::StatSet, Pokedex, PokemonId,
         },
         trainer::TrainerData,
+        Dex,
     },
+    tetra::Context,
+    util::Entity,
 };
 
 use common::{
-    laminar::{Packet, Socket, SocketEvent},
-    NetBattleClient, NetClientMessage, NetServerMessage, Player, SERVER_PORT,
+    net::network::{split, Endpoint, NetEvent, NetworkController, SendStatus, Transport},
+    rand::Rng,
+    sync::Mutex,
+    uuid::Uuid,
+    NetClientMessage,
+    NetServerMessage,
+    Player,
 };
 
-use rand::Rng;
+use crate::ConnectState;
 
 pub struct BattleConnection {
-    socket: Socket,
-    server: SocketAddr,
-    client: SocketAddr,
+    controller: NetworkController,
+    endpoint: Endpoint,
+    messages: Arc<Mutex<VecDeque<Vec<u8>>>>,
     name: Option<String>,
 }
 
 impl BattleConnection {
     pub fn connect(address: SocketAddr, name: Option<String>) -> Self {
-        let server = SocketAddr::new(address.ip(), SERVER_PORT);
-        let client = SocketAddr::new(
-            common::ip().unwrap(),
-            address.port(),
-        );
+        let (controller, mut processor) = split();
 
-        let mut socket = Socket::bind(client).unwrap();
-        info!("Connected on {}", client);
+        let (server, address) = controller.connect(Transport::Tcp, address).unwrap();
 
-        socket
-            .send(Packet::reliable_unordered(
-                server,
-                ser::serialize(&NetClientMessage::RequestConnect).unwrap(),
-            ))
-            .unwrap();
-        info!("Sent connection request to server.");
+        info!("Connected to {}", address);
+
+        let messages = Arc::new(Mutex::new(VecDeque::new()));
+
+        let receiver = messages.clone();
+
+        std::thread::spawn(move || loop {
+            processor.process_poll_event(None, |event| match event {
+                NetEvent::Connected(endpoint, ..) => info!("Connected to endpoint: {}", endpoint),
+                NetEvent::Accepted(endpoint, id) => {
+                    debug!("Accepted to endpoint: {} with resource id {}", endpoint, id)
+                }
+                NetEvent::Message(endpoint, bytes) => {
+                    if endpoint == server {
+                        receiver.lock().push_back(bytes.to_owned());
+                    } else {
+                        warn!("Received packets from non server endpoint!")
+                    }
+                }
+                NetEvent::Disconnected(endpoint) => {
+                    info!("Disconnected from endpoint: {}", endpoint)
+                }
+            });
+        });
 
         Self {
-            socket,
-            server,
-            client,
+            controller,
+            endpoint: server,
+            messages,
+            // client,
             name,
         }
     }
 
-    pub fn poll(&mut self) {
-        self.socket.manual_poll(Instant::now());
+    pub fn end(&mut self) {
+        self.controller.remove(self.endpoint.resource_id());
     }
 
-    pub fn wait_confirm(&mut self) -> bool {
-        if let Some(event) = self.socket.recv() {
-            match event {
-                SocketEvent::Packet(packet) => {
-                    if let Ok(message) = ser::deserialize(packet.payload()) {
-                        match message {
-                            NetServerMessage::AcceptConnect => {
+    pub fn wait_confirm(&mut self) -> Option<ConnectState> {
+        if let Some(bytes) = self.recv() {
+            match ser::deserialize::<NetServerMessage>(&bytes) {
+                Ok(message) => match message {
+                    NetServerMessage::CanConnect(accepted) => {
+                        return Some(match accepted {
+                            true => {
                                 info!("Server accepted connection!");
-
-                                let name = date().to_string();
 
                                 let mut pokemon = PokemonParty::new();
 
-                                let mut rand = rand::thread_rng();
+                                let mut rand = common::rand::thread_rng();
 
                                 for _ in 0..pokemon.capacity() {
                                     let id = rand.gen_range(1..Pokedex::len() as PokemonId);
@@ -92,70 +101,91 @@ impl BattleConnection {
                                     ));
                                 }
 
-                                self.socket.send(Packet::reliable_unordered(
-                                self.server,
-                                ser::serialize(
-                                    &NetClientMessage::Connect(
-                                        Player {
-                                            id: name.parse().unwrap(),
-                                            trainer: TrainerData {
-                                                npc_type: "rival".parse().unwrap(),
-                                                prefix: "Trainer".to_owned(),
-                                                name: self.name.take().unwrap_or(name),
-                                            },
-                                            party: pokemon,
-                                            client: NetBattleClient(self.client),
-                                        }
-                                    )
-                                ).unwrap_or_else(|err| panic!("Could not send connect message to server with error {}", err))
-                            )).unwrap();
-                                return true;
+                                let npc_type = "rival".parse().unwrap();
+                                let name = self.name.take().unwrap_or_else(|| {
+                                    use common::rand::distributions::Alphanumeric;
+                                    let mut rng = common::rand::thread_rng();
+                                    std::iter::repeat(())
+                                        .map(|()| rng.sample(Alphanumeric))
+                                        .map(char::from)
+                                        .take(7)
+                                        .collect()
+                                });
+
+                                self.send(&NetClientMessage::Connect(Player {
+                                    trainer: TrainerData {
+                                        npc_type,
+                                        prefix: "Trainer".to_owned(),
+                                        name,
+                                    },
+                                    party: pokemon,
+                                    // client: NetBattleClient(self.client),
+                                }));
+
+                                ConnectState::Connected
                             }
-                        }
+                            false => ConnectState::Closed,
+                        });
                     }
-                }
-                _ => (),
+                    _ => todo!(),
+                },
+                Err(err) => warn!("Could not deserialize server message with error {}", err),
             }
         }
-        false
+        None
     }
 
-    pub fn receive(&mut self, gui: &mut BattlePlayerGui, ctx: &mut Context) {
-        while let Some(event) = self.socket.recv() {
-            match event {
-                SocketEvent::Packet(packet) => {
-                    if let Ok(message) = ser::deserialize::<ServerMessage>(packet.payload()) {
-                        let message_eq = matches!(message, ServerMessage::Opponents(..));
+    pub fn gui_receive(
+        &mut self,
+        gui: &mut BattlePlayerGui<Uuid>,
+        ctx: &mut Context,
+        state: &mut ConnectState,
+    ) {
+        while let Some(bytes) = self.recv() {
+            match ser::deserialize::<NetServerMessage>(&bytes) {
+                Ok(message) => match message {
+                    NetServerMessage::Game(message) => {
+                        debug!("received message {:?}", message);
                         gui.give_client(message);
-                        if message_eq {
-                            gui.start(true);
-                            gui.on_begin(ctx);
-                            gui.player
-                                .renderer
-                                .iter_mut()
-                                .for_each(|a| a.status.spawn());
-                            gui.opponent
-                                .renderer
-                                .iter_mut()
-                                .for_each(|a| a.status.spawn());
-                        }
                     }
-                }
-                _ => (),
+                    NetServerMessage::Begin => {
+                        gui.start(true);
+                        gui.on_begin(ctx);
+                        gui.player
+                            .renderer
+                            .iter_mut()
+                            .for_each(|a| a.status.spawn());
+                        gui.opponent
+                            .renderer
+                            .iter_mut()
+                            .for_each(|a| a.status.spawn());
+                    }
+                    NetServerMessage::CanConnect(..) => (),
+                    NetServerMessage::End => *state = ConnectState::Closed,
+                },
+                Err(err) => warn!("Could not receive server message with error {}", err),
             }
         }
     }
 
-    pub fn send(&mut self, gui: &mut BattlePlayerGui) {
+    pub fn gui_send(&mut self, gui: &mut BattlePlayerGui<Uuid>) {
         while let Some(message) = gui.give_server() {
-            match ser::serialize(&message) {
-                Ok(bytes) => {
-                    if let Err(err) = self.socket.send(Packet::reliable_unordered(self.server, bytes)) {
-                        todo!("{}", err)
-                    }
-                }
-                Err(err) => todo!("{}", err),
-            }
+            self.send(&NetClientMessage::Game(message));
         }
+    }
+
+    pub fn send(&mut self, message: &NetClientMessage) {
+        debug!("Sending message {:?}", message);
+        match ser::serialize(message) {
+            Ok(bytes) => match self.controller.send(self.endpoint, &bytes) {
+                SendStatus::Sent => (),
+                status => todo!("{:?}", status),
+            },
+            Err(err) => todo!("{}", err),
+        }
+    }
+
+    pub fn recv(&mut self) -> Option<Vec<u8>> {
+        self.messages.lock().pop_front()
     }
 }

@@ -1,11 +1,10 @@
 [package]
 name = "firecore-battle-net"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["Rhys Holloway <rhyswilliamholloway@gmail.com>"]
 edition = "2018"
+repository = "https://github.com/DoNotDoughnut/pokemon-battle-net"
 # default-run = "pokemon-battle-server"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [profile.dev]
 panic = "abort"
@@ -17,9 +16,13 @@ codegen-units = 1
 
 [dependencies]
 firecore-pokedex = { git = "https://github.com/DoNotDoughnut/firecore-game", package = "firecore-pokedex" }
+firecore-battle = { git = "https://github.com/DoNotDoughnut/firecore-game", package = "firecore-battle" }
 serde = { version = "1.0", features = ["derive"] }
-laminar = "0.5"
-simple_logger = "*"
+message-io = { version = "0.14", features = ["tcp"], default-features = false }
+simple_logger = "1"
+parking_lot = "0.11"
+rand = "0.8"
+uuid = { version = "0.8", features = ["serde", "v4"] }
 
 [workspace]
 members = [

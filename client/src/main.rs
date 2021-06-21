@@ -1,28 +1,33 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 extern crate firecore_battle_net as common;
+extern crate firecore_game as game;
 
-use std::{net::SocketAddr, rc::Rc};
+use std::{
+    net::{IpAddr, SocketAddr},
+    rc::Rc,
+};
 
-use firecore_game::{
+use common::uuid::Uuid;
+
+use game::{
     battle_cli::clients::gui::BattlePlayerGui,
+    deps::ser,
     graphics::draw_text_left,
     gui::{bag::BagGui, party::PartyGui},
+    init,
     log::{info, warn},
     tetra::{
         graphics::{
             self,
-            Color,
             scaling::{ScalingMode, ScreenScaler},
+            Color,
         },
         input::{self, Key},
         time::{self, Timestep},
-        Context, Event, Result, State,
-        ContextBuilder,
+        Context, ContextBuilder, Event, Result, State,
     },
-    util::{WIDTH, HEIGHT},
-    init,
-    deps::ser,
+    util::{HEIGHT, WIDTH},
 };
 
 use self::sender::BattleConnection;
@@ -33,52 +38,49 @@ const SCALE: f32 = 3.0;
 const TITLE: &str = "Pokemon Battle";
 
 fn main() -> Result {
-    common::logger::SimpleLogger::new().init().unwrap();
-    ContextBuilder::new(
-        TITLE,
-        (WIDTH * SCALE) as _,
-        (HEIGHT * SCALE) as _,
-    )
-    .vsync(true)
-    .resizable(true)
-    .show_mouse(true)
-    .timestep(Timestep::Variable)
-    .build()
-    .unwrap()
-    .run(GameState::new)
+    common::logger::SimpleLogger::new()
+        .with_level(game::log::LevelFilter::Debug)
+        .init()
+        .unwrap();
+    ContextBuilder::new(TITLE, (WIDTH * SCALE) as _, (HEIGHT * SCALE) as _)
+        .vsync(true)
+        .resizable(true)
+        .show_mouse(true)
+        .timestep(Timestep::Variable)
+        .build()
+        .unwrap()
+        .run(GameState::new)
 }
 
-enum States {
+pub enum States {
     Connect(String),
     Connected(BattleConnection, ConnectState),
 }
 
-enum ConnectState {
+pub enum ConnectState {
     WaitConfirm,
     // WaitBegin,
+    Closed,
     Connected,
 }
 
 struct GameState {
     state: States,
-    gui: BattlePlayerGui,
+    gui: BattlePlayerGui<Uuid>,
     scaler: ScreenScaler,
 }
 
 impl GameState {
     pub fn new(ctx: &mut Context) -> Result<Self> {
+
         let party = Rc::new(PartyGui::new(ctx));
         let bag = Rc::new(BagGui::new(ctx));
 
-        let scaler = ScreenScaler::with_window_size(
-            ctx,
-            WIDTH as _,
-            HEIGHT as _,
-            ScalingMode::ShowAll,
-        )?;
+        let scaler =
+            ScreenScaler::with_window_size(ctx, WIDTH as _, HEIGHT as _, ScalingMode::ShowAll)?;
         Ok(Self {
             state: States::Connect(String::new()),
-            gui: BattlePlayerGui::new(ctx, party, bag),
+            gui: BattlePlayerGui::new(ctx, party, bag, Uuid::default()),
             scaler,
         })
     }
@@ -89,13 +91,16 @@ impl State for GameState {
         init::configuration()?;
         init::text(
             ctx,
-            ser::deserialize(include_bytes!("../fonts.bin"))
-                .unwrap(),
+            ser::deserialize(include_bytes!("../fonts.bin")).unwrap(),
         )?;
         init::pokedex(ctx, ser::deserialize(include_bytes!("../dex.bin")).unwrap())
     }
 
     fn end(&mut self, _ctx: &mut Context) -> Result {
+        match &mut self.state {
+            States::Connect(..) => (),
+            States::Connected(connection, ..) => connection.end(),
+        }
         Ok(())
     }
 
@@ -108,11 +113,21 @@ impl State for GameState {
                 if input::is_key_pressed(ctx, Key::Enter) {
                     let mut strings = string.split_ascii_whitespace();
                     if let Some(ip) = strings.next() {
-                        match ip.parse::<SocketAddr>() {
+                        let addr =
+                            ip.parse::<SocketAddr>()
+                                .or_else(|err| match ip.parse::<IpAddr>() {
+                                    Ok(addr) => Ok(SocketAddr::new(addr, common::DEFAULT_PORT)),
+                                    Err(..) => Err(err),
+                                });
+
+                        match addr {
                             Ok(addr) => {
                                 info!("Connecting to server at {}", addr);
                                 self.state = States::Connected(
-                                    BattleConnection::connect(addr, strings.next().map(ToOwned::to_owned)),
+                                    BattleConnection::connect(
+                                        addr,
+                                        strings.next().map(ToOwned::to_owned),
+                                    ),
                                     ConnectState::WaitConfirm,
                                 );
                             }
@@ -128,26 +143,18 @@ impl State for GameState {
                     string.push_str(new);
                 }
             }
-            States::Connected(connection, connected) => {
-                connection.poll();
-                match connected {
-                    ConnectState::WaitConfirm => {
-                        if connection.wait_confirm() {
-                            *connected = ConnectState::Connected;
-                        }
-                    }
-                    // ConnectState::WaitBegin => {
-                    //     if connection.wait_begin() {
-                    //         *connected = ConnectState::Connected;
-                    //     }
-                    // }
-                    ConnectState::Connected => {
-                        connection.receive(&mut self.gui, ctx);
-                        self.gui.update(ctx, time::get_delta_time(ctx).as_secs_f32(), false);
-                        connection.send(&mut self.gui);
-                    }
+            States::Connected(connection, state) => match state {
+                ConnectState::WaitConfirm => if let Some(connected) = connection.wait_confirm() {
+                    *state = connected;
                 }
-            }
+                ConnectState::Closed => self.state = States::Connect(String::new()),
+                ConnectState::Connected => {
+                    connection.gui_receive(&mut self.gui, ctx, state);
+                    self.gui
+                        .update(ctx, time::get_delta_time(ctx).as_secs_f32(), false);
+                    connection.gui_send(&mut self.gui);
+                }
+            },
         }
         Ok(())
     }
