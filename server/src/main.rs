@@ -144,11 +144,13 @@ fn main() {
             players.next().unwrap(),
             controller.clone(),
             receiver.clone(),
+            configuration.battle_size,
         ),
         BattleServerPlayer::player(
             players.next().unwrap(),
             controller.clone(),
             receiver.clone(),
+            configuration.battle_size,
         ),
     );
 

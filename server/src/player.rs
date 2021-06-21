@@ -27,6 +27,7 @@ impl BattleServerPlayer {
         player: (Endpoint, Player),
         controller: Arc<NetworkController>,
         receiver: Arc<Receiver>,
+        battle_size: u8,
     ) -> BattlePlayer<Uuid> {
         receiver.insert(player.0, VecDeque::new());
         BattlePlayer::new(
@@ -43,7 +44,7 @@ impl BattleServerPlayer {
                 controller,
                 receiver,
             }),
-            1,
+            battle_size as usize,
         )
     }
 }
