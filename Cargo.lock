@@ -333,7 +333,7 @@ dependencies = [
 
 [[package]]
 name = "firecore-battle-net"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "firecore-battle",
  "firecore-pokedex",
@@ -823,7 +823,7 @@ dependencies = [
 
 [[package]]
 name = "pokemon-battle-server"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "ctrlc",
  "dashmap",
