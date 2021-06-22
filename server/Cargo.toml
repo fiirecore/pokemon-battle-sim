@@ -15,4 +15,6 @@ dashmap = "4.0"
 
 [build-dependencies]
 dex-builder-mini = { path="./dex-builder-mini" }
+
+[target.'cfg(windows)'.build-dependencies]
 winres = "0.1"

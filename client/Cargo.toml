@@ -9,5 +9,5 @@ build = "build.rs"
 firecore-battle-net = { path=".." }
 firecore-game = { git="https://github.com/DoNotDoughnut/firecore-game", default-features=false, features=["battle", "static-link", "logger"] }
 
-[build-dependencies]
+[target.'cfg(windows)'.build-dependencies]
 winres = "0.1"
