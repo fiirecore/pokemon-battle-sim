@@ -26,7 +26,7 @@ The program uses TCP and defaults to port 28528
 
 ## Other:
 
-See main code for the game here: https://github.com/DoNotDoughnut/firecore-game,
+See main code for the game here: https://github.com/DoNotDoughnut/pokemon-game,
 This repository is built on top of it.
 
 Many moves are not implemented because I'm pretty sure I need to do them all manually

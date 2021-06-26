@@ -7,7 +7,7 @@ use firecore_pokedex_game::{
     serialize::SerializedDex,
 };
 
-pub fn deserialize_normal(path: impl AsRef<Path>) -> SerializedDex {
+pub fn deserialize_from_path(path: impl AsRef<Path>) -> SerializedDex {
     let path = path.as_ref();
     firecore_dependencies::ser::deserialize(&std::fs::read(path).unwrap_or_else(|err| {
         panic!(
@@ -18,7 +18,7 @@ pub fn deserialize_normal(path: impl AsRef<Path>) -> SerializedDex {
     .unwrap_or_else(|err| panic!("Could not deserialize SerializedDex with error {}", err))
 }
 
-pub fn compile_from_normal(dex: SerializedDex, output: impl AsRef<Path>) {
+pub fn compile(dex: SerializedDex, output: impl AsRef<Path>) {
     let output = output.as_ref();
 
     let mut data = (

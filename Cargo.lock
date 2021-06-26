@@ -233,11 +233,22 @@ dependencies = [
 ]
 
 [[package]]
-name = "dex-builder-mini"
-version = "0.2.0"
+name = "dex-builder"
+version = "0.5.0-2021-06-19"
+source = "git+https://github.com/DoNotDoughnut/pokemon-game#edeb439e0c682a7dd437765ffd0354d38dbb1173"
 dependencies = [
- "firecore-dependencies 0.5.0-beta.2021-06-19 (git+https://github.com/DoNotDoughnut/firecore-game)",
- "firecore-pokedex-game 0.5.0-beta.2021-06-19 (git+https://github.com/DoNotDoughnut/firecore-game)",
+ "firecore-dependencies",
+ "firecore-pokedex-game",
+ "ron",
+ "serde",
+]
+
+[[package]]
+name = "dex-builder-mini"
+version = "0.3.0"
+dependencies = [
+ "firecore-dependencies",
+ "firecore-pokedex-game",
 ]
 
 [[package]]
@@ -315,19 +326,19 @@ dependencies = [
 [[package]]
 name = "firecore-audio"
 version = "0.1.1"
-source = "git+https://github.com/DoNotDoughnut/pokemon-game#0c0bc3783111893568307fa3483abf746550a1d8"
+source = "git+https://github.com/DoNotDoughnut/pokemon-game#edeb439e0c682a7dd437765ffd0354d38dbb1173"
 dependencies = [
- "firecore-dependencies 0.5.0-beta.2021-06-19 (git+https://github.com/DoNotDoughnut/pokemon-game)",
+ "firecore-dependencies",
  "serde",
 ]
 
 [[package]]
 name = "firecore-battle"
 version = "0.5.0-beta.2021-06-25"
-source = "git+https://github.com/DoNotDoughnut/pokemon-game#0c0bc3783111893568307fa3483abf746550a1d8"
+source = "git+https://github.com/DoNotDoughnut/pokemon-game#edeb439e0c682a7dd437765ffd0354d38dbb1173"
 dependencies = [
- "firecore-dependencies 0.5.0-beta.2021-06-19 (git+https://github.com/DoNotDoughnut/pokemon-game)",
- "firecore-pokedex 0.5.0-beta.2021-06-19 (git+https://github.com/DoNotDoughnut/pokemon-game)",
+ "firecore-dependencies",
+ "firecore-pokedex",
  "serde",
 ]
 
@@ -336,8 +347,8 @@ name = "firecore-battle-net"
 version = "0.3.1"
 dependencies = [
  "firecore-battle",
- "firecore-dependencies 0.5.0-beta.2021-06-19 (git+https://github.com/DoNotDoughnut/pokemon-game)",
- "firecore-pokedex 0.5.0-beta.2021-06-19 (git+https://github.com/DoNotDoughnut/pokemon-game)",
+ "firecore-dependencies",
+ "firecore-pokedex",
  "message-io",
  "parking_lot",
  "rand",
@@ -348,21 +359,7 @@ dependencies = [
 [[package]]
 name = "firecore-dependencies"
 version = "0.5.0-beta.2021-06-19"
-source = "git+https://github.com/DoNotDoughnut/firecore-game#d91b575899b62c278f33ecbaac2e483761663e2e"
-dependencies = [
- "ahash",
- "arrayvec",
- "bincode",
- "rhai",
- "serde",
- "tetra",
- "tinystr",
-]
-
-[[package]]
-name = "firecore-dependencies"
-version = "0.5.0-beta.2021-06-19"
-source = "git+https://github.com/DoNotDoughnut/pokemon-game#0c0bc3783111893568307fa3483abf746550a1d8"
+source = "git+https://github.com/DoNotDoughnut/pokemon-game#edeb439e0c682a7dd437765ffd0354d38dbb1173"
 dependencies = [
  "ahash",
  "arrayvec",
@@ -377,7 +374,7 @@ dependencies = [
 [[package]]
 name = "firecore-font"
 version = "0.2.0-alpha.1"
-source = "git+https://github.com/DoNotDoughnut/pokemon-game#0c0bc3783111893568307fa3483abf746550a1d8"
+source = "git+https://github.com/DoNotDoughnut/pokemon-game#edeb439e0c682a7dd437765ffd0354d38dbb1173"
 dependencies = [
  "serde",
 ]
@@ -385,14 +382,14 @@ dependencies = [
 [[package]]
 name = "firecore-game"
 version = "0.5.0-beta.2021-06-21"
-source = "git+https://github.com/DoNotDoughnut/pokemon-game#0c0bc3783111893568307fa3483abf746550a1d8"
+source = "git+https://github.com/DoNotDoughnut/pokemon-game#edeb439e0c682a7dd437765ffd0354d38dbb1173"
 dependencies = [
  "atomic",
  "enum-map",
  "firecore-audio",
  "firecore-battle",
- "firecore-dependencies 0.5.0-beta.2021-06-19 (git+https://github.com/DoNotDoughnut/pokemon-game)",
- "firecore-pokedex-game 0.5.0-beta.2021-06-19 (git+https://github.com/DoNotDoughnut/pokemon-game)",
+ "firecore-dependencies",
+ "firecore-pokedex-game",
  "firecore-text",
  "firecore-util",
  "pokemon-firered-clone-storage",
@@ -403,48 +400,29 @@ dependencies = [
 [[package]]
 name = "firecore-pokedex"
 version = "0.5.0-beta.2021-06-19"
-source = "git+https://github.com/DoNotDoughnut/firecore-game#d91b575899b62c278f33ecbaac2e483761663e2e"
+source = "git+https://github.com/DoNotDoughnut/pokemon-game#edeb439e0c682a7dd437765ffd0354d38dbb1173"
 dependencies = [
- "firecore-dependencies 0.5.0-beta.2021-06-19 (git+https://github.com/DoNotDoughnut/firecore-game)",
- "serde",
-]
-
-[[package]]
-name = "firecore-pokedex"
-version = "0.5.0-beta.2021-06-19"
-source = "git+https://github.com/DoNotDoughnut/pokemon-game#0c0bc3783111893568307fa3483abf746550a1d8"
-dependencies = [
- "firecore-dependencies 0.5.0-beta.2021-06-19 (git+https://github.com/DoNotDoughnut/pokemon-game)",
+ "firecore-dependencies",
  "serde",
 ]
 
 [[package]]
 name = "firecore-pokedex-game"
 version = "0.5.0-beta.2021-06-19"
-source = "git+https://github.com/DoNotDoughnut/firecore-game#d91b575899b62c278f33ecbaac2e483761663e2e"
+source = "git+https://github.com/DoNotDoughnut/pokemon-game#edeb439e0c682a7dd437765ffd0354d38dbb1173"
 dependencies = [
- "firecore-dependencies 0.5.0-beta.2021-06-19 (git+https://github.com/DoNotDoughnut/firecore-game)",
- "firecore-pokedex 0.5.0-beta.2021-06-19 (git+https://github.com/DoNotDoughnut/firecore-game)",
- "serde",
-]
-
-[[package]]
-name = "firecore-pokedex-game"
-version = "0.5.0-beta.2021-06-19"
-source = "git+https://github.com/DoNotDoughnut/pokemon-game#0c0bc3783111893568307fa3483abf746550a1d8"
-dependencies = [
- "firecore-dependencies 0.5.0-beta.2021-06-19 (git+https://github.com/DoNotDoughnut/pokemon-game)",
- "firecore-pokedex 0.5.0-beta.2021-06-19 (git+https://github.com/DoNotDoughnut/pokemon-game)",
+ "firecore-dependencies",
+ "firecore-pokedex",
  "serde",
 ]
 
 [[package]]
 name = "firecore-saves"
 version = "0.5.0-beta.2021-06-07"
-source = "git+https://github.com/DoNotDoughnut/pokemon-game#0c0bc3783111893568307fa3483abf746550a1d8"
+source = "git+https://github.com/DoNotDoughnut/pokemon-game#edeb439e0c682a7dd437765ffd0354d38dbb1173"
 dependencies = [
- "firecore-dependencies 0.5.0-beta.2021-06-19 (git+https://github.com/DoNotDoughnut/pokemon-game)",
- "firecore-pokedex 0.5.0-beta.2021-06-19 (git+https://github.com/DoNotDoughnut/pokemon-game)",
+ "firecore-dependencies",
+ "firecore-pokedex",
  "firecore-storage",
  "firecore-util",
  "firecore-world",
@@ -454,10 +432,10 @@ dependencies = [
 [[package]]
 name = "firecore-storage"
 version = "0.4.0"
-source = "git+https://github.com/DoNotDoughnut/pokemon-game#0c0bc3783111893568307fa3483abf746550a1d8"
+source = "git+https://github.com/DoNotDoughnut/pokemon-game#edeb439e0c682a7dd437765ffd0354d38dbb1173"
 dependencies = [
  "dirs-next",
- "firecore-dependencies 0.5.0-beta.2021-06-19 (git+https://github.com/DoNotDoughnut/pokemon-game)",
+ "firecore-dependencies",
  "ron",
  "serde",
 ]
@@ -465,9 +443,9 @@ dependencies = [
 [[package]]
 name = "firecore-text"
 version = "0.5.0-beta.2021-06-07"
-source = "git+https://github.com/DoNotDoughnut/pokemon-game#0c0bc3783111893568307fa3483abf746550a1d8"
+source = "git+https://github.com/DoNotDoughnut/pokemon-game#edeb439e0c682a7dd437765ffd0354d38dbb1173"
 dependencies = [
- "firecore-dependencies 0.5.0-beta.2021-06-19 (git+https://github.com/DoNotDoughnut/pokemon-game)",
+ "firecore-dependencies",
  "firecore-font",
  "serde",
 ]
@@ -475,21 +453,21 @@ dependencies = [
 [[package]]
 name = "firecore-util"
 version = "0.4.1"
-source = "git+https://github.com/DoNotDoughnut/pokemon-game#0c0bc3783111893568307fa3483abf746550a1d8"
+source = "git+https://github.com/DoNotDoughnut/pokemon-game#edeb439e0c682a7dd437765ffd0354d38dbb1173"
 dependencies = [
- "firecore-dependencies 0.5.0-beta.2021-06-19 (git+https://github.com/DoNotDoughnut/pokemon-game)",
+ "firecore-dependencies",
  "serde",
 ]
 
 [[package]]
 name = "firecore-world"
 version = "0.5.0-beta.2021-06-13"
-source = "git+https://github.com/DoNotDoughnut/pokemon-game#0c0bc3783111893568307fa3483abf746550a1d8"
+source = "git+https://github.com/DoNotDoughnut/pokemon-game#edeb439e0c682a7dd437765ffd0354d38dbb1173"
 dependencies = [
  "firecore-audio",
- "firecore-dependencies 0.5.0-beta.2021-06-19 (git+https://github.com/DoNotDoughnut/pokemon-game)",
+ "firecore-dependencies",
  "firecore-font",
- "firecore-pokedex 0.5.0-beta.2021-06-19 (git+https://github.com/DoNotDoughnut/pokemon-game)",
+ "firecore-pokedex",
  "firecore-util",
  "serde",
 ]
@@ -504,6 +482,17 @@ dependencies = [
  "crc32fast",
  "libc",
  "miniz_oxide 0.4.4",
+]
+
+[[package]]
+name = "font-builder"
+version = "0.4.0"
+source = "git+https://github.com/DoNotDoughnut/pokemon-game#edeb439e0c682a7dd437765ffd0354d38dbb1173"
+dependencies = [
+ "firecore-dependencies",
+ "firecore-font",
+ "ron",
+ "serde",
 ]
 
 [[package]]
@@ -836,19 +825,22 @@ dependencies = [
 
 [[package]]
 name = "pokemon-battle-client"
-version = "0.2.2"
+version = "0.3.0"
 dependencies = [
+ "dex-builder",
  "firecore-battle-net",
  "firecore-game",
+ "font-builder",
  "winres",
 ]
 
 [[package]]
 name = "pokemon-battle-server"
-version = "0.2.4"
+version = "0.3.0"
 dependencies = [
  "ctrlc",
  "dashmap",
+ "dex-builder",
  "dex-builder-mini",
  "firecore-battle-net",
  "serde",
@@ -860,7 +852,7 @@ dependencies = [
 [[package]]
 name = "pokemon-firered-clone-storage"
 version = "0.4.0"
-source = "git+https://github.com/DoNotDoughnut/pokemon-game#0c0bc3783111893568307fa3483abf746550a1d8"
+source = "git+https://github.com/DoNotDoughnut/pokemon-game#edeb439e0c682a7dd437765ffd0354d38dbb1173"
 dependencies = [
  "firecore-saves",
  "firecore-storage",

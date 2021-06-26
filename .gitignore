@@ -1,1 +1,3 @@
 /target
+/server/*.bin
+/client/*.bin

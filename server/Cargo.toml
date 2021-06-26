@@ -1,6 +1,6 @@
 [package]
 name = "pokemon-battle-server"
-version = "0.2.4"
+version = "0.3.0"
 authors = ["Rhys Holloway <rhyswilliamholloway@gmail.com>"]
 edition = "2018"
 build = "build.rs"
@@ -14,6 +14,7 @@ simple_logger = "1"
 dashmap = "4.0"
 
 [build-dependencies]
+dex-builder = { git="https://github.com/DoNotDoughnut/pokemon-game", package="dex-builder" }
 dex-builder-mini = { path="./dex-builder-mini" }
 
 [target.'cfg(windows)'.build-dependencies]
