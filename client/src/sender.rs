@@ -29,7 +29,7 @@ use crate::ConnectState;
 pub struct BattleConnection {
     controller: NetworkController,
     endpoint: Endpoint,
-    messages: Arc<Mutex<VecDeque<Vec<u8>>>>,
+    messages: Arc<Mutex<VecDeque<NetServerMessage>>>,
     name: Option<String>,
 }
 
@@ -56,7 +56,10 @@ impl BattleConnection {
                 }
                 NetEvent::Message(endpoint, bytes) => {
                     if endpoint == server {
-                        receiver.lock().push_back(bytes.to_owned());
+                        match ser::deserialize::<NetServerMessage>(&bytes) {
+                            Ok(message) => receiver.lock().push_back(message),
+                            Err(err) => warn!("Could not receive server message with error {}", err),
+                        }
                     } else {
                         warn!("Received packets from non server endpoint!")
                     }
@@ -80,56 +83,53 @@ impl BattleConnection {
     }
 
     pub fn wait_confirm(&mut self) -> Option<ConnectState> {
-        if let Some(bytes) = self.recv() {
-            match ser::deserialize::<NetServerMessage>(&bytes) {
-                Ok(message) => match message {
-                    NetServerMessage::CanConnect(accepted) => {
-                        return Some(match accepted {
-                            true => {
-                                info!("Server accepted connection!");
+        if let Some(message) = self.recv() {
+            match message {
+                NetServerMessage::CanConnect(accepted) => {
+                    return Some(match accepted {
+                        true => {
+                            info!("Server accepted connection!");
 
-                                let mut pokemon = PokemonParty::new();
+                            let mut pokemon = PokemonParty::new();
 
-                                let mut rand = common::rand::thread_rng();
+                            let mut rand = common::rand::thread_rng();
 
-                                for _ in 0..pokemon.capacity() {
-                                    let id = rand.gen_range(1..Pokedex::len() as PokemonId);
-                                    pokemon.push(PokemonInstance::generate_with_level(
-                                        id,
-                                        50,
-                                        Some(StatSet::uniform(15)),
-                                    ));
-                                }
-
-                                let npc_type = "rival".parse().unwrap();
-                                let name = self.name.take().unwrap_or_else(|| {
-                                    use common::rand::distributions::Alphanumeric;
-                                    let mut rng = common::rand::thread_rng();
-                                    std::iter::repeat(())
-                                        .map(|()| rng.sample(Alphanumeric))
-                                        .map(char::from)
-                                        .take(7)
-                                        .collect()
-                                });
-
-                                self.send(&NetClientMessage::Connect(Player {
-                                    trainer: TrainerData {
-                                        npc_type,
-                                        prefix: "Trainer".to_owned(),
-                                        name,
-                                    },
-                                    party: pokemon,
-                                    // client: NetBattleClient(self.client),
-                                }));
-
-                                ConnectState::Connected
+                            for _ in 0..pokemon.capacity() {
+                                let id = rand.gen_range(1..Pokedex::len() as PokemonId);
+                                pokemon.push(PokemonInstance::generate_with_level(
+                                    id,
+                                    50,
+                                    Some(StatSet::uniform(15)),
+                                ));
                             }
-                            false => ConnectState::Closed,
-                        });
-                    }
-                    _ => todo!(),
-                },
-                Err(err) => warn!("Could not deserialize server message with error {}", err),
+
+                            let npc_type = "rival".parse().unwrap();
+                            let name = self.name.take().unwrap_or_else(|| {
+                                use common::rand::distributions::Alphanumeric;
+                                let mut rng = common::rand::thread_rng();
+                                std::iter::repeat(())
+                                    .map(|()| rng.sample(Alphanumeric))
+                                    .map(char::from)
+                                    .take(7)
+                                    .collect()
+                            });
+
+                            self.send(&NetClientMessage::Connect(Player {
+                                trainer: TrainerData {
+                                    npc_type,
+                                    prefix: "Trainer".to_owned(),
+                                    name,
+                                },
+                                party: pokemon,
+                                // client: NetBattleClient(self.client),
+                            }));
+
+                            ConnectState::ConnectedWait
+                        }
+                        false => ConnectState::Closed,
+                    });
+                }
+                _ => todo!(),
             }
         }
         None
@@ -141,29 +141,27 @@ impl BattleConnection {
         ctx: &mut Context,
         state: &mut ConnectState,
     ) {
-        while let Some(bytes) = self.recv() {
-            match ser::deserialize::<NetServerMessage>(&bytes) {
-                Ok(message) => match message {
-                    NetServerMessage::Game(message) => {
-                        debug!("received message {:?}", message);
-                        gui.give_client(message);
-                    }
-                    NetServerMessage::Begin => {
-                        gui.start(true);
-                        gui.on_begin(ctx);
-                        gui.player
-                            .renderer
-                            .iter_mut()
-                            .for_each(|a| a.status.spawn());
-                        gui.opponent
-                            .renderer
-                            .iter_mut()
-                            .for_each(|a| a.status.spawn());
-                    }
-                    NetServerMessage::CanConnect(..) => (),
-                    NetServerMessage::End => *state = ConnectState::Closed,
-                },
-                Err(err) => warn!("Could not receive server message with error {}", err),
+        while let Some(message) = self.recv() {
+            match message {
+                NetServerMessage::Game(message) => {
+                    debug!("received message {:?}", message);
+                    gui.give_client(message);
+                }
+                NetServerMessage::Begin => {
+                    *state = ConnectState::ConnectedPlay;
+                    gui.start(true);
+                    gui.on_begin(ctx);
+                    gui.player
+                        .renderer
+                        .iter_mut()
+                        .for_each(|a| a.status.spawn());
+                    gui.opponent
+                        .renderer
+                        .iter_mut()
+                        .for_each(|a| a.status.spawn());
+                }
+                NetServerMessage::CanConnect(..) => (),
+                NetServerMessage::End => *state = ConnectState::Closed,
             }
         }
     }
@@ -185,7 +183,7 @@ impl BattleConnection {
         }
     }
 
-    pub fn recv(&mut self) -> Option<Vec<u8>> {
+    pub fn recv(&mut self) -> Option<NetServerMessage> {
         self.messages.lock().pop_front()
     }
 }

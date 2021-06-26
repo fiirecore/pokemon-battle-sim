@@ -1,13 +1,13 @@
 [package]
 name = "pokemon-battle-client"
-version = "0.2.1"
+version = "0.2.2"
 authors = ["Rhys Holloway <rhyswilliamholloway@gmail.com>"]
 edition = "2018"
 build = "build.rs"
 
 [dependencies]
 firecore-battle-net = { path=".." }
-firecore-game = { git="https://github.com/DoNotDoughnut/firecore-game", default-features=false, features=["battle", "static-link", "logger"] }
+firecore-game = { git="https://github.com/DoNotDoughnut/pokemon-game", default-features=false, features=["battle", "static-link", "logger"] }
 
 [target.'cfg(windows)'.build-dependencies]
 winres = "0.1"

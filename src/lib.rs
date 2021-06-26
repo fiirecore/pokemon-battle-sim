@@ -7,7 +7,6 @@ pub extern crate parking_lot as sync;
 pub use firecore_dependencies::*;
 
 use battle::message::{ClientMessage, ServerMessage};
-use log::LevelFilter;
 use net::network::Transport;
 use pokedex::{pokemon::party::PokemonParty, trainer::TrainerData};
 use serde::{Deserialize, Serialize};
@@ -24,11 +23,11 @@ pub enum NetClientMessage {
 }
 
 #[derive(Debug, Deserialize, Serialize)]
-pub enum NetServerMessage<'a> {
+pub enum NetServerMessage {
     CanConnect(bool),
     Begin,
     End,
-    Game(ServerMessage<'a, Uuid>),
+    Game(ServerMessage<Uuid>),
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

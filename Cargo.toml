@@ -1,6 +1,6 @@
 [package]
 name = "firecore-battle-net"
-version = "0.3.0"
+version = "0.3.1"
 authors = ["Rhys Holloway <rhyswilliamholloway@gmail.com>"]
 edition = "2018"
 repository = "https://github.com/DoNotDoughnut/pokemon-battle-net"
@@ -15,9 +15,9 @@ panic = "abort"
 codegen-units = 1
 
 [dependencies]
-firecore-pokedex = { git="https://github.com/DoNotDoughnut/firecore-game", package="firecore-pokedex" }
-firecore-battle = { git="https://github.com/DoNotDoughnut/firecore-game", package="firecore-battle" }
-firecore-dependencies = { git="https://github.com/DoNotDoughnut/firecore-game", package="firecore-dependencies", features=["ser", "hash", "log"] }
+firecore-pokedex = { git="https://github.com/DoNotDoughnut/pokemon-game", package="firecore-pokedex" }
+firecore-battle = { git="https://github.com/DoNotDoughnut/pokemon-game", package="firecore-battle" }
+firecore-dependencies = { git="https://github.com/DoNotDoughnut/pokemon-game", package="firecore-dependencies", features=["ser", "hash", "log"] }
 serde = { version="1.0", features=["derive"] }
 message-io = { version="0.14", features=["tcp"], default-features=false }
 parking_lot = "0.11"
