@@ -8,7 +8,7 @@ use std::{
     rc::Rc,
 };
 
-use common::uuid::Uuid;
+use common::{borrow::BorrowableMut, pokedex::item::{ItemStack, bag::Bag}, uuid::Uuid};
 
 use game::{
     battle_cli::clients::gui::BattlePlayerGui,
@@ -38,7 +38,6 @@ const SCALE: f32 = 3.0;
 const TITLE: &str = "Pokemon Battle";
 
 fn main() -> Result {
-
     game::init::logger();
 
     ContextBuilder::new(TITLE, (WIDTH * SCALE) as _, (HEIGHT * SCALE) as _)
@@ -60,7 +59,7 @@ pub enum ConnectState {
     // WaitBegin,
     Closed,
     ConnectedWait,
-    ConnectedPlay
+    ConnectedPlay,
 }
 
 struct GameState {
@@ -71,7 +70,6 @@ struct GameState {
 
 impl GameState {
     pub fn new(ctx: &mut Context) -> Result<Self> {
-
         let party = Rc::new(PartyGui::new(ctx));
         let bag = Rc::new(BagGui::new(ctx));
 
@@ -79,7 +77,13 @@ impl GameState {
             ScreenScaler::with_window_size(ctx, WIDTH as _, HEIGHT as _, ScalingMode::ShowAll)?;
         Ok(Self {
             state: States::Connect(String::new()),
-            gui: BattlePlayerGui::new(ctx, party, bag, Uuid::default()),
+            gui: BattlePlayerGui::new(
+                ctx,
+                party,
+                bag,
+                BorrowableMut::Owned(Bag { items: vec![ItemStack::new(&"hyper_potion".parse().unwrap(), 3)] }),
+                Uuid::default(),
+            ),
             scaler,
         })
     }
@@ -143,14 +147,17 @@ impl State for GameState {
                 }
             }
             States::Connected(connection, state) => match state {
-                ConnectState::WaitConfirm => if let Some(connected) = connection.wait_confirm() {
-                    *state = connected;
+                ConnectState::WaitConfirm => {
+                    if let Some(connected) = connection.wait_confirm() {
+                        *state = connected;
+                    }
                 }
                 ConnectState::Closed => self.state = States::Connect(String::new()),
-                ConnectState::ConnectedWait => (),
+                ConnectState::ConnectedWait => connection.gui_receive(&mut self.gui, ctx, state),
                 ConnectState::ConnectedPlay => {
                     connection.gui_receive(&mut self.gui, ctx, state);
-                    self.gui.update(ctx, time::get_delta_time(ctx).as_secs_f32(), false);
+                    self.gui
+                        .update(ctx, time::get_delta_time(ctx).as_secs_f32(), false);
                     connection.gui_send(&mut self.gui);
                 }
             },
@@ -165,22 +172,26 @@ impl State for GameState {
                 States::Connect(ip) => {
                     draw_text_left(ctx, &1, "Input IP Address", &Color::WHITE, 5.0, 5.0);
                     draw_text_left(ctx, &1, ip, &Color::WHITE, 5.0, 25.0);
-                },
+                }
                 States::Connected(.., connected) => match connected {
-                    ConnectState::WaitConfirm => draw_text_left(ctx, &1, "Connecting...", &Color::WHITE, 5.0, 5.0),
+                    ConnectState::WaitConfirm => {
+                        draw_text_left(ctx, &1, "Connecting...", &Color::WHITE, 5.0, 5.0)
+                    }
                     ConnectState::ConnectedWait => {
-                            draw_text_left(ctx, &1, "Connected!", &Color::WHITE, 5.0, 5.0);
-                            draw_text_left(ctx, &1, "Waiting for opponent", &Color::WHITE, 5.0, 25.0);
+                        draw_text_left(ctx, &1, "Connected!", &Color::WHITE, 5.0, 5.0);
+                        draw_text_left(ctx, &1, "Waiting for opponent", &Color::WHITE, 5.0, 25.0);
                     }
                     ConnectState::ConnectedPlay => {
-                            graphics::set_canvas(ctx, self.scaler.canvas());
-                            graphics::clear(ctx, Color::BLACK);
-                            self.gui.draw(ctx);
-                            graphics::reset_transform_matrix(ctx);
-                            graphics::reset_canvas(ctx);
-                            self.scaler.draw(ctx);
-                    },
-                    ConnectState::Closed => draw_text_left(ctx, &1, "Connection Closed", &Color::WHITE, 5.0, 5.0),
+                        graphics::set_canvas(ctx, self.scaler.canvas());
+                        graphics::clear(ctx, Color::BLACK);
+                        self.gui.draw(ctx);
+                        graphics::reset_transform_matrix(ctx);
+                        graphics::reset_canvas(ctx);
+                        self.scaler.draw(ctx);
+                    }
+                    ConnectState::Closed => {
+                        draw_text_left(ctx, &1, "Connection Closed", &Color::WHITE, 5.0, 5.0)
+                    }
                 },
             }
         }

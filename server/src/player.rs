@@ -4,7 +4,7 @@ use common::{
     battle::{
         client::{BattleClient, BattleEndpoint},
         message::{ClientMessage, ServerMessage},
-        pokemon::BattlePlayer,
+        player::{BattlePlayer, PlayerSettings},
     },
     log::debug,
     net::network::{Endpoint, NetworkController},
@@ -32,13 +32,16 @@ impl BattleServerPlayer {
         receiver.insert(player.0, VecDeque::new());
         BattlePlayer::new(
             Uuid::new_v4(),
-            Some(player.1.trainer),
             player
                 .1
                 .party
                 .into_iter()
                 .map(BorrowedPokemon::Owned)
                 .collect(),
+            Some(player.1.trainer),
+            PlayerSettings {
+                gains_exp: false,
+            },
             Box::new(BattleServerPlayer {
                 endpoint: player.0,
                 controller,

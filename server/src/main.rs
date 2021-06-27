@@ -156,6 +156,15 @@ fn main() {
 
     battle.begin();
 
+    {
+        // Send signal to begin battle
+        let message = &ser::serialize(&NetServerMessage::Begin).unwrap();
+        for endpoint in receiver.iter() {
+            debug!("Sending start to {:?}", endpoint.key());
+            send(&controller, *endpoint.key(), message);
+        }
+    }
+
     let running = Arc::new(AtomicBool::new(true));
 
     // Queue close on control-c
@@ -212,14 +221,6 @@ fn main() {
         });
     });
 
-    {
-        // Send signal to begin battle
-        let message = &ser::serialize(&NetServerMessage::Begin).unwrap();
-        for endpoint in receiver.iter() {
-            send(&controller, *endpoint.key(), message);
-        }
-    }
-
     while !battle.finished() && running.load(Ordering::Relaxed) {
         battle.update(&engine);
         thread::sleep(Duration::from_millis(5)); // To - do: only process when messages are received, stay idle and dont loop when not received
@@ -232,7 +233,7 @@ fn main() {
 
 fn send(controller: &NetworkController, endpoint: Endpoint, data: &[u8]) {
     match controller.send(endpoint, data) {
-        SendStatus::Sent => (),
+        SendStatus::Sent => debug!("Sent message!"),
         status => error!("Could not send message with error {:?}", status),
     }
 }

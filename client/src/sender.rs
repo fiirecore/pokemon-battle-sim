@@ -35,15 +35,16 @@ pub struct BattleConnection {
 
 impl BattleConnection {
     pub fn connect(address: SocketAddr, name: Option<String>) -> Self {
-
         let (controller, mut processor) = split();
 
         info!("Connecting to {}", address);
 
-        let (endpoint, ..) = controller.connect(common::PROTOCOL, address).unwrap_or_else(|err| panic!("Could not connect to {} with error {}", address, err));
+        let (endpoint, ..) = controller
+            .connect(common::PROTOCOL, address)
+            .unwrap_or_else(|err| panic!("Could not connect to {} with error {}", address, err));
 
         let messages = Arc::new(Mutex::new(VecDeque::new()));
-        
+
         let server = endpoint;
 
         let receiver = messages.clone();
@@ -57,8 +58,13 @@ impl BattleConnection {
                 NetEvent::Message(endpoint, bytes) => {
                     if endpoint == server {
                         match ser::deserialize::<NetServerMessage>(&bytes) {
-                            Ok(message) => receiver.lock().push_back(message),
-                            Err(err) => warn!("Could not receive server message with error {}", err),
+                            Ok(message) => {
+                                debug!("Received message: {:?}", message);
+                                receiver.lock().push_back(message);
+                            }
+                            Err(err) => {
+                                warn!("Could not receive server message with error {}", err)
+                            }
                         }
                     } else {
                         warn!("Received packets from non server endpoint!")
@@ -148,6 +154,7 @@ impl BattleConnection {
                     gui.give_client(message);
                 }
                 NetServerMessage::Begin => {
+                    debug!("Received begin message!");
                     *state = ConnectState::ConnectedPlay;
                     gui.start(true);
                     gui.on_begin(ctx);

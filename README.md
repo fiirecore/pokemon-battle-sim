@@ -19,9 +19,9 @@ It is recommended to build the game.
 The program uses TCP and defaults to port 28528
 
 1. Open the server
-2. Open two clients (the screen will be black on startup, this is normal)
+2. Open two clients (the screen will be black on startup and say input IP address, this is normal)
 3. Type the server's ip address into both clients.
-4. If you cannot type and the screen is black with no "Connecting..." message, you have connected.
+4. If the screen says "Connected!" and "Waiting for opponent" you have connected. Otherwise, if the client hangs on "Connecting..." the client cannot reach the server.
 5. When both clients connect, the battle starts.
 
 ## Other:
