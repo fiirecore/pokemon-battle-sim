@@ -1,8 +1,8 @@
 use std::{collections::VecDeque, net::SocketAddr, sync::Arc};
 
+use common::battle::client::{BattleClient, BattleEndpoint};
+
 use game::{
-    battle::client::{BattleClient, BattleEndpoint},
-    battle_cli::clients::gui::BattlePlayerGui,
     deps::ser,
     log::{debug, info, warn},
     pokedex::{
@@ -15,6 +15,8 @@ use game::{
     tetra::Context,
     util::Entity,
 };
+
+use client::BattlePlayerGui;
 
 use common::{
     net::network::{split, Endpoint, NetEvent, NetworkController, SendStatus},

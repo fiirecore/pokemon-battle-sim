@@ -2,6 +2,7 @@
 
 extern crate firecore_battle_net as common;
 extern crate firecore_game as game;
+extern crate firecore_battle_client as client;
 
 use std::{
     net::{IpAddr, SocketAddr},
@@ -11,7 +12,6 @@ use std::{
 use common::{borrow::BorrowableMut, pokedex::item::{ItemStack, bag::Bag}, uuid::Uuid};
 
 use game::{
-    battle_cli::clients::gui::BattlePlayerGui,
     deps::ser,
     graphics::draw_text_left,
     gui::{bag::BagGui, party::PartyGui},
@@ -29,6 +29,8 @@ use game::{
     },
     util::{HEIGHT, WIDTH},
 };
+
+use client::BattlePlayerGui;
 
 use self::sender::BattleConnection;
 
