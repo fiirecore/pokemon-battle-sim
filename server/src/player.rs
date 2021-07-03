@@ -41,6 +41,7 @@ impl BattleServerPlayer {
             Some(player.1.trainer),
             PlayerSettings {
                 gains_exp: false,
+                ..Default::default()
             },
             Box::new(BattleServerPlayer {
                 endpoint: player.0,

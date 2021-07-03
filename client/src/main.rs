@@ -159,7 +159,7 @@ impl State for GameState {
                 ConnectState::ConnectedPlay => {
                     connection.gui_receive(&mut self.gui, ctx, state);
                     self.gui
-                        .update(ctx, time::get_delta_time(ctx).as_secs_f32(), false);
+                        .update(ctx, time::get_delta_time(ctx).as_secs_f32());
                     connection.gui_send(&mut self.gui);
                 }
             },
