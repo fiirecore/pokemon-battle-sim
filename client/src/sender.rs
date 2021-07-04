@@ -122,15 +122,18 @@ impl BattleConnection {
                                     .collect()
                             });
 
-                            self.send(&NetClientMessage::Connect(Player {
-                                trainer: TrainerData {
-                                    npc_type,
-                                    prefix: "Trainer".to_owned(),
-                                    name,
+                            self.send(&NetClientMessage::Connect(
+                                Player {
+                                    trainer: TrainerData {
+                                        npc_type,
+                                        prefix: "Trainer".to_owned(),
+                                        name,
+                                    },
+                                    party: pokemon,
+                                    // client: NetBattleClient(self.client),
                                 },
-                                party: pokemon,
-                                // client: NetBattleClient(self.client),
-                            }));
+                                common::VERSION,
+                            ));
 
                             ConnectState::ConnectedWait
                         }
@@ -154,6 +157,10 @@ impl BattleConnection {
                 NetServerMessage::Game(message) => {
                     debug!("received message {:?}", message);
                     gui.give_client(message);
+                }
+                NetServerMessage::WrongVersion => {
+                    warn!("Could not connect to server as it is version incompatible!");
+                    *state = ConnectState::WrongVersion(5.0);
                 }
                 NetServerMessage::Begin => {
                     debug!("Received begin message!");

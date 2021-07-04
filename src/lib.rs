@@ -12,19 +12,22 @@ use pokedex::{pokemon::party::PokemonParty, trainer::TrainerData};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+
 pub const DEFAULT_PORT: u16 = 28528;
 
 pub const PROTOCOL: Transport = Transport::FramedTcp;
 
 #[derive(Debug, Deserialize, Serialize)]
-pub enum NetClientMessage {
-    Connect(Player),
+pub enum NetClientMessage<'a> {
+    Connect(Player, &'a str), // player, dex hashes
     Game(ClientMessage),
 }
 
 #[derive(Debug, Deserialize, Serialize)]
 pub enum NetServerMessage {
     CanConnect(bool),
+    WrongVersion,
     Begin,
     End,
     Game(ServerMessage<Uuid>),

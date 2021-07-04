@@ -1,6 +1,6 @@
 [package]
 name = "firecore-battle-net"
-version = "0.3.1"
+version = "0.3.2"
 authors = ["Rhys Holloway <rhyswilliamholloway@gmail.com>"]
 edition = "2018"
 repository = "https://github.com/DoNotDoughnut/pokemon-battle-net"

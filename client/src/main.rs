@@ -1,15 +1,19 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+extern crate firecore_battle_client as client;
 extern crate firecore_battle_net as common;
 extern crate firecore_game as game;
-extern crate firecore_battle_client as client;
 
 use std::{
     net::{IpAddr, SocketAddr},
     rc::Rc,
 };
 
-use common::{borrow::BorrowableMut, pokedex::item::{ItemStack, bag::Bag}, uuid::Uuid};
+use common::{
+    borrow::BorrowableMut,
+    pokedex::item::{bag::Bag, ItemStack},
+    uuid::Uuid,
+};
 
 use game::{
     deps::ser,
@@ -56,10 +60,15 @@ pub enum States {
     Connected(BattleConnection, ConnectState),
 }
 
+impl States {
+    pub const CONNECT: Self = Self::Connect(String::new());
+}
+
 pub enum ConnectState {
     WaitConfirm,
     // WaitBegin,
     Closed,
+    WrongVersion(f32),
     ConnectedWait,
     ConnectedPlay,
 }
@@ -83,7 +92,9 @@ impl GameState {
                 ctx,
                 party,
                 bag,
-                BorrowableMut::Owned(Bag { items: vec![ItemStack::new(&"hyper_potion".parse().unwrap(), 3)] }),
+                BorrowableMut::Owned(Bag {
+                    items: vec![ItemStack::new(&"hyper_potion".parse().unwrap(), 3)],
+                }),
                 Uuid::default(),
             ),
             scaler,
@@ -156,6 +167,12 @@ impl State for GameState {
                 }
                 ConnectState::Closed => self.state = States::Connect(String::new()),
                 ConnectState::ConnectedWait => connection.gui_receive(&mut self.gui, ctx, state),
+                ConnectState::WrongVersion(remaining) => {
+                    *remaining -= time::get_delta_time(ctx).as_secs_f32();
+                    if remaining < &mut 0.0 {
+                        self.state = States::Connect(String::new());
+                    }
+                }
                 ConnectState::ConnectedPlay => {
                     connection.gui_receive(&mut self.gui, ctx, state);
                     self.gui
@@ -183,6 +200,14 @@ impl State for GameState {
                         draw_text_left(ctx, &1, "Connected!", &Color::WHITE, 5.0, 5.0);
                         draw_text_left(ctx, &1, "Waiting for opponent", &Color::WHITE, 5.0, 25.0);
                     }
+                    ConnectState::WrongVersion(..) => draw_text_left(
+                        ctx,
+                        &1,
+                        "Server version is incompatible!",
+                        &Color::WHITE,
+                        5.0,
+                        25.0,
+                    ),
                     ConnectState::ConnectedPlay => {
                         graphics::set_canvas(ctx, self.scaler.canvas());
                         graphics::clear(ctx, Color::BLACK);

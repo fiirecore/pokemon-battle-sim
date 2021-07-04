@@ -22,11 +22,9 @@ use common::{
     },
     hash::HashMap,
     log::{debug, error, info, warn, LevelFilter},
-    net::network::SendStatus,
-    net::network::{split, Endpoint, NetEvent, NetworkController},
+    net::network::{split, Endpoint, NetEvent, NetworkController, SendStatus},
     pokedex::moves::usage::script::engine,
-    ser,
-    NetClientMessage, NetServerMessage,
+    ser, NetClientMessage, NetServerMessage,
 };
 
 use crate::{configuration::Configuration, player::BattleServerPlayer};
@@ -102,14 +100,30 @@ fn main() {
                 NetEvent::Message(endpoint, bytes) => {
                     match ser::deserialize::<NetClientMessage>(bytes) {
                         Ok(message) => match message {
-                            NetClientMessage::Connect(player) => {
+                            NetClientMessage::Connect(player, version) => {
                                 info!("Endpoint at {} has sent player data.", endpoint);
-                                if players.insert(endpoint, player).is_some() {
-                                    error!(
-                                        "Player at {} was replaced with another connection!",
-                                        endpoint
-                                    );
-                                    return;
+                                match version == common::VERSION {
+                                    true => {
+                                        if players.insert(endpoint, player).is_some() {
+                                            error!(
+                                            "Player at {} was replaced with another connection!",
+                                            endpoint
+                                        );
+                                            return;
+                                        }
+                                    }
+                                    false => {
+                                        info!(
+                                            "Player at {} connected with an invalid version!",
+                                            endpoint
+                                        );
+                                        send(
+                                            &controller,
+                                            endpoint,
+                                            &ser::serialize(&NetServerMessage::WrongVersion)
+                                                .unwrap(),
+                                        );
+                                    }
                                 }
                             }
                             NetClientMessage::Game(..) => todo!(),

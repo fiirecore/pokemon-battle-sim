@@ -1,6 +1,6 @@
 [package]
 name = "pokemon-battle-client"
-version = "0.3.2"
+version = "0.3.3"
 authors = ["Rhys Holloway <rhyswilliamholloway@gmail.com>"]
 edition = "2018"
 build = "build.rs"
