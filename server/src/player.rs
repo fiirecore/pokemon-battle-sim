@@ -6,13 +6,14 @@ use common::{
         message::{ClientMessage, ServerMessage},
         player::{BattlePlayer, PlayerSettings},
     },
-    log::debug,
     net::network::{Endpoint, NetworkController},
     pokedex::pokemon::instance::BorrowedPokemon,
     ser::serialize,
     uuid::Uuid,
     NetServerMessage, Player,
 };
+
+use log::debug;
 
 use crate::{send, Receiver};
 

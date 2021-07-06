@@ -1,8 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-extern crate firecore_battle_client as client;
+extern crate firecore_battle_gui as gui;
 extern crate firecore_battle_net as common;
-extern crate firecore_game as game;
 
 use std::{
     net::{IpAddr, SocketAddr},
@@ -12,15 +11,13 @@ use std::{
 use common::{
     borrow::BorrowableMut,
     pokedex::item::{bag::Bag, ItemStack},
+    ser,
     uuid::Uuid,
 };
 
-use game::{
-    deps::ser,
+use gui::pokedex::engine::{
+    self,
     graphics::draw_text_left,
-    gui::{bag::BagGui, party::PartyGui},
-    init,
-    log::{info, warn},
     tetra::{
         graphics::{
             self,
@@ -34,7 +31,12 @@ use game::{
     util::{HEIGHT, WIDTH},
 };
 
-use client::BattlePlayerGui;
+use gui::{
+    pokedex::gui::{bag::BagGui, party::PartyGui},
+    BattlePlayerGui,
+};
+
+use log::{info, warn, LevelFilter};
 
 use self::sender::BattleConnection;
 
@@ -44,7 +46,16 @@ const SCALE: f32 = 3.0;
 const TITLE: &str = "Pokemon Battle";
 
 fn main() -> Result {
-    game::init::logger();
+    let l = simple_logger::SimpleLogger::new();
+
+    #[cfg(debug_assertions)]
+    let l = l.with_level(LevelFilter::Debug);
+
+    #[cfg(not(debug_assertions))]
+    let l = l.with_level(LevelFilter::Info);
+
+    l.init()
+        .unwrap_or_else(|err| panic!("Could not initialize logger with error {}", err));
 
     ContextBuilder::new(TITLE, (WIDTH * SCALE) as _, (HEIGHT * SCALE) as _)
         .vsync(true)
@@ -104,12 +115,16 @@ impl GameState {
 
 impl State for GameState {
     fn begin(&mut self, ctx: &mut Context) -> Result {
-        init::configuration()?;
-        init::text(
+        engine::graphics::text::init(
             ctx,
             ser::deserialize(include_bytes!("../fonts.bin")).unwrap(),
         )?;
-        init::pokedex(ctx, ser::deserialize(include_bytes!("../dex.bin")).unwrap())
+        gui::pokedex::init(
+            ctx,
+            ser::deserialize(include_bytes!("../dex.bin")).unwrap(),
+            |_| {
+            },
+        )
     }
 
     fn end(&mut self, _ctx: &mut Context) -> Result {

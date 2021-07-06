@@ -15,9 +15,8 @@ panic = "abort"
 codegen-units = 1
 
 [dependencies]
-firecore-pokedex = { git="https://github.com/DoNotDoughnut/pokemon-game", package="firecore-pokedex" }
-firecore-battle = { git="https://github.com/DoNotDoughnut/pokemon-game", package="firecore-battle" }
-firecore-dependencies = { git="https://github.com/DoNotDoughnut/pokemon-game", package="firecore-dependencies", features=["ser", "hash", "log"] }
+firecore-battle = { git="https://github.com/DoNotDoughnut/firecore-battle" }
+firecore-dependencies = { git="https://github.com/DoNotDoughnut/firecore-dependencies", features=["ser"] }
 serde = { version="1.0", features=["derive"] }
 message-io = { version="0.14", features=["tcp"], default-features=false }
 parking_lot = "0.11"

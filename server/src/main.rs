@@ -14,6 +14,8 @@ use std::{
     time::Duration,
 };
 
+use log::{debug, error, info, warn, LevelFilter};
+
 use common::{
     battle::{
         data::{BattleData, BattleType},
@@ -21,7 +23,6 @@ use common::{
         Battle,
     },
     hash::HashMap,
-    log::{debug, error, info, warn, LevelFilter},
     net::network::{split, Endpoint, NetEvent, NetworkController, SendStatus},
     pokedex::moves::usage::script::engine,
     ser, NetClientMessage, NetServerMessage,

@@ -12,9 +12,10 @@ toml = "0.5"
 serde = { version="1.0", features=["derive"] }
 simple_logger = "1"
 dashmap = "4.0"
+log = "0.4"
 
 [build-dependencies]
-dex-builder = { git="https://github.com/DoNotDoughnut/pokemon-game", package="dex-builder" }
+firecore-pokedex-builder = { git="https://github.com/DoNotDoughnut/firecore-pokedex-builder" }
 dex-builder-mini = { path="./dex-builder-mini" }
 
 [target.'cfg(windows)'.build-dependencies]

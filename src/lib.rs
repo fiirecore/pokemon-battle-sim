@@ -1,5 +1,5 @@
 pub extern crate firecore_battle as battle;
-pub extern crate firecore_pokedex as pokedex;
+pub use battle::pokedex;
 pub extern crate message_io as net;
 pub extern crate rand;
 pub extern crate uuid;

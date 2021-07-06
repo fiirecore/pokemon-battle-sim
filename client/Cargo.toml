@@ -7,12 +7,14 @@ build = "build.rs"
 
 [dependencies]
 firecore-battle-net = { path=".." }
-firecore-game = { git="https://github.com/DoNotDoughnut/pokemon-game", default-features=false, features=["static-link", "logger"] }
-firecore-battle-client = { git="https://github.com/DoNotDoughnut/pokemon-game", package = "firecore-battle-client", default-features=false, features=["static-link"] }
+firecore-dependencies = { git="https://github.com/DoNotDoughnut/firecore-dependencies" }
+firecore-battle-gui = { git="https://github.com/DoNotDoughnut/firecore-battle-gui" }
+log = "0.4"
+simple_logger = "1"
 
 [build-dependencies]
-font-builder = { git="https://github.com/DoNotDoughnut/pokemon-game", package="font-builder" }
-dex-builder = { git="https://github.com/DoNotDoughnut/pokemon-game", package="dex-builder" }
+firecore-font-builder = { git="https://github.com/DoNotDoughnut/firecore-font-builder" }
+firecore-pokedex-builder = { git="https://github.com/DoNotDoughnut/firecore-pokedex-builder" }
 
 [target.'cfg(windows)'.build-dependencies]
 winres = "0.1"

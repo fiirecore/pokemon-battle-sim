@@ -2,9 +2,9 @@ use std::{collections::VecDeque, net::SocketAddr, sync::Arc};
 
 use common::battle::client::{BattleClient, BattleEndpoint};
 
-use game::{
-    deps::ser,
-    log::{debug, info, warn},
+use gui::pokedex::engine::tetra::Context;
+
+use common::{
     pokedex::{
         pokemon::{
             instance::PokemonInstance, party::PokemonParty, stat::StatSet, Pokedex, PokemonId,
@@ -12,11 +12,12 @@ use game::{
         trainer::TrainerData,
         Dex,
     },
-    tetra::Context,
-    util::Entity,
+    ser,
 };
 
-use client::BattlePlayerGui;
+use log::{debug, info, warn};
+
+use gui::BattlePlayerGui;
 
 use common::{
     net::network::{split, Endpoint, NetEvent, NetworkController, SendStatus},
@@ -167,14 +168,14 @@ impl BattleConnection {
                     *state = ConnectState::ConnectedPlay;
                     gui.start(true);
                     gui.on_begin(ctx);
-                    gui.player
-                        .renderer
-                        .iter_mut()
-                        .for_each(|a| a.status.spawn());
-                    gui.opponent
-                        .renderer
-                        .iter_mut()
-                        .for_each(|a| a.status.spawn());
+                    // gui.player
+                    //     .renderer
+                    //     .iter_mut()
+                    //     .for_each(|a| a.status.spawn());
+                    // gui.opponent
+                    //     .renderer
+                    //     .iter_mut()
+                    //     .for_each(|a| a.status.spawn());
                 }
                 NetServerMessage::CanConnect(..) => (),
                 NetServerMessage::End => *state = ConnectState::Closed,
