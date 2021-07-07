@@ -122,7 +122,14 @@ impl State for GameState {
         gui::pokedex::init(
             ctx,
             ser::deserialize(include_bytes!("../dex.bin")).unwrap(),
-            |_| {
+            #[cfg(feature = "audio")]
+            |pokemon| {
+                if let Err(_) = engine::audio::sound::add_sound(engine::audio::serialized::SerializedSoundData {
+                    bytes: std::mem::take(&mut pokemon.cry_ogg),
+                    sound: engine::audio::sound::Sound::variant(gui::pokedex::CRY_ID, Some(pokemon.pokemon.id)),
+                }) {
+                    // warn!("Error adding pokemon cry: {}", err);
+                }
             },
         )
     }

@@ -5,7 +5,7 @@ fn main() {
         "../assets/pokedex/items",
         "../assets/pokedex/trainers",
         Some("dex.bin"),
-        true,
+        cfg!(feature = "audio"),
     );
     firecore_font_builder::compile("../assets/fonts", "fonts.bin");
     #[cfg(windows)]
