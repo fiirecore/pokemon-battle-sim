@@ -392,7 +392,7 @@ dependencies = [
 [[package]]
 name = "firecore-battle"
 version = "0.5.0-beta.2021-07-31"
-source = "git+https://github.com/DoNotDoughnut/firecore-battle#842eb33276b58677fecec0dc662406f323e1fdf1"
+source = "git+https://github.com/DoNotDoughnut/firecore-battle#17e4b1d78593ed502a3d6f7dd93ec48bb658b1e5"
 dependencies = [
  "firecore-pokedex",
  "log",
@@ -403,7 +403,7 @@ dependencies = [
 [[package]]
 name = "firecore-battle-gui"
 version = "0.5.0-beta.2021-07-31"
-source = "git+https://github.com/DoNotDoughnut/firecore-battle-gui#cd33c01fdf866c8b576b358471c787d973e87dfb"
+source = "git+https://github.com/DoNotDoughnut/firecore-battle-gui#86cb095b999adab988b350646bd7f49d0d479cbf"
 dependencies = [
  "firecore-battle",
  "firecore-pokedex-engine 0.5.0-beta.2021-07-31 (git+https://github.com/DoNotDoughnut/firecore-pokedex-client)",
@@ -412,7 +412,7 @@ dependencies = [
 
 [[package]]
 name = "firecore-battle-net"
-version = "0.3.3"
+version = "0.4.0"
 dependencies = [
  "bincode",
  "firecore-battle",
@@ -941,7 +941,7 @@ dependencies = [
 
 [[package]]
 name = "pokemon-battle-client"
-version = "0.3.3"
+version = "0.4.0"
 dependencies = [
  "firecore-battle-gui",
  "firecore-battle-net",
@@ -954,7 +954,7 @@ dependencies = [
 
 [[package]]
 name = "pokemon-battle-server"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "ctrlc",
  "dashmap",
