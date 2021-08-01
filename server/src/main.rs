@@ -4,7 +4,6 @@ use dashmap::DashMap;
 use simple_logger::SimpleLogger;
 
 use std::{
-    collections::VecDeque,
     net::{IpAddr, Ipv4Addr, SocketAddr},
     sync::{
         atomic::{AtomicBool, Ordering},
@@ -16,21 +15,20 @@ use std::{
 
 use log::{debug, error, info, warn, LevelFilter};
 
+use hashbrown::HashMap;
+
 use common::{
-    battle::{
-        data::{BattleData, BattleType},
-        message::ClientMessage,
-        Battle,
-    },
-    hash::HashMap,
+    battle::{message::ClientMessage, Battle, BattleData, BattleType},
     net::network::{split, Endpoint, NetEvent, NetworkController, SendStatus},
     pokedex::moves::usage::script::engine,
-    ser, NetClientMessage, NetServerMessage,
+    rand::prelude::ThreadRng,
+    ser, NetClientMessage, NetServerMessage, Queue,
 };
 
 use crate::{configuration::Configuration, player::BattleServerPlayer};
 
-type Receiver = DashMap<Endpoint, VecDeque<ClientMessage>>;
+type RandomState = hashbrown::hash_map::DefaultHashBuilder;
+type Receiver = DashMap<Endpoint, Queue<ClientMessage>, RandomState>;
 
 mod configuration;
 mod player;
@@ -82,7 +80,7 @@ fn main() {
     info!("Listening on port {}", configuration.port);
 
     let mut players = HashMap::with_capacity(2);
-    let engine = engine();
+    let engine = engine::<ThreadRng>();
 
     // Waiting room
 
@@ -95,7 +93,7 @@ fn main() {
                     send(
                         &controller,
                         endpoint,
-                        &ser::serialize(&NetServerMessage::CanConnect(true)).unwrap(),
+                        &serialize(&NetServerMessage::CanConnect(true)),
                     );
                 }
                 NetEvent::Message(endpoint, bytes) => {
@@ -121,8 +119,7 @@ fn main() {
                                         send(
                                             &controller,
                                             endpoint,
-                                            &ser::serialize(&NetServerMessage::WrongVersion)
-                                                .unwrap(),
+                                            &serialize(&NetServerMessage::WrongVersion),
                                         );
                                     }
                                 }
@@ -145,7 +142,7 @@ fn main() {
 
     info!("Starting battle.");
 
-    let receiver = Arc::new(DashMap::new());
+    let receiver = Arc::new(DashMap::with_hasher(RandomState::new()));
 
     let mut players = players.into_iter();
 
@@ -173,7 +170,7 @@ fn main() {
 
     {
         // Send signal to begin battle
-        let message = &ser::serialize(&NetServerMessage::Begin).unwrap();
+        let message = &serialize(&NetServerMessage::Begin);
         for endpoint in receiver.iter() {
             debug!("Sending start to {:?}", endpoint.key());
             send(&controller, *endpoint.key(), message);
@@ -197,7 +194,7 @@ fn main() {
             controller_handle.as_ref(),
         )
     })
-    .unwrap();
+    .unwrap_or_else(|err| panic!("Could not set Ctrl + C handler with error {}", err));
 
     // Handle incoming messages
 
@@ -219,13 +216,12 @@ fn main() {
             NetEvent::Message(endpoint, bytes) => {
                 match ser::deserialize::<NetClientMessage>(bytes) {
                     Ok(message) => match message {
-                        NetClientMessage::Game(message) => receiver_handle
-                            .get_mut(&endpoint)
-                            .unwrap()
-                            .push_back(message),
+                        NetClientMessage::Game(message) => {
+                            get_endpoint(&receiver_handle, &endpoint).push(message)
+                        }
                         NetClientMessage::Connect(..) => todo!("Client reconnecting."),
                     },
-                    Err(err) => warn!("Could not deserialize message with error {}", err),
+                    Err(err) => error!("Could not deserialize message with error {}", err),
                 }
             }
             NetEvent::Disconnected(endpoint) => {
@@ -236,8 +232,10 @@ fn main() {
         });
     });
 
+    let mut random = common::rand::thread_rng();
+
     while !battle.finished() && running.load(Ordering::Relaxed) {
-        battle.update(&engine);
+        battle.update(&mut random, &engine);
         thread::sleep(Duration::from_millis(5)); // To - do: only process when messages are received, stay idle and dont loop when not received
     }
 
@@ -254,10 +252,10 @@ fn send(controller: &NetworkController, endpoint: Endpoint, data: &[u8]) {
 }
 
 use common::pokedex::{
+    id::Dex,
     item::{Item, Itemdex},
     moves::{Move, Movedex},
     pokemon::{Pokedex, Pokemon},
-    Dex,
 };
 
 pub fn pokedex_init_mini(dex: (Vec<Pokemon>, Vec<Move>, Vec<Item>)) {
@@ -266,10 +264,23 @@ pub fn pokedex_init_mini(dex: (Vec<Pokemon>, Vec<Move>, Vec<Item>)) {
     Itemdex::set(dex.2.into_iter().map(|i| (i.id, i)).collect());
 }
 
+fn get_endpoint<'a>(
+    receiver: &'a Receiver,
+    endpoint: &Endpoint,
+) -> dashmap::mapref::one::RefMut<'a, Endpoint, Queue<ClientMessage>, RandomState> {
+    receiver
+        .get_mut(&endpoint)
+        .unwrap_or_else(|| panic!("Could not get message queue for endpoint {}", endpoint))
+}
+
 fn end_battle(running: &AtomicBool, receiver: &Receiver, controller: &NetworkController) {
-    let data = &ser::serialize(&NetServerMessage::End).unwrap();
+    let data = serialize(&NetServerMessage::End);
     for endpoint in receiver.iter() {
-        controller.send(*endpoint.key(), data);
+        controller.send(*endpoint.key(), &data);
     }
     running.store(false, Ordering::Relaxed);
+}
+
+fn serialize(s: &impl serde::Serialize) -> Vec<u8> {
+    ser::serialize(s).unwrap()
 }

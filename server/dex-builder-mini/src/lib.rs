@@ -1,15 +1,14 @@
 use std::{fs::write, path::Path};
 
-use firecore_pokedex_game::{
+use firecore_pokedex_builder::pokedex::{
     item::Item,
-    moves::Move,
     pokemon::Pokemon,
     serialize::SerializedDex,
 };
 
 pub fn deserialize_from_path(path: impl AsRef<Path>) -> SerializedDex {
     let path = path.as_ref();
-    firecore_dependencies::ser::deserialize(&std::fs::read(path).unwrap_or_else(|err| {
+    firecore_pokedex_builder::ser::deserialize(&std::fs::read(path).unwrap_or_else(|err| {
         panic!(
             "Could not read SerializedDex file at {:?} with error {}",
             path, err
@@ -26,10 +25,7 @@ pub fn compile(dex: SerializedDex, output: impl AsRef<Path>) {
             .into_iter()
             .map(|p| p.pokemon)
             .collect::<Vec<Pokemon>>(),
-        dex.moves
-            .into_iter()
-            .map(|m| m.pokemon_move)
-            .collect::<Vec<Move>>(),
+        dex.moves,
         dex.items.into_iter().map(|i| i.item).collect::<Vec<Item>>(),
     );
 
@@ -37,7 +33,7 @@ pub fn compile(dex: SerializedDex, output: impl AsRef<Path>) {
     data.1.sort_by_key(|m| m.id);
     data.2.sort_by_key(|i| i.id);
 
-    let data = firecore_dependencies::ser::serialize(&data)
+    let data = firecore_pokedex_builder::ser::serialize(&data)
         .unwrap_or_else(|err| panic!("Could not serialize mini dex binary with error {}", err));
 
     write(output, &data).unwrap_or_else(|err| {

@@ -6,12 +6,11 @@ edition = "2018"
 build = "build.rs"
 
 [features]
-default = ["audio"]
-audio = ["firecore-battle-gui/audio"]
+default = []
+audio = ["firecore-battle-gui/audio", "firecore-pokedex-builder/audio"]
 
 [dependencies]
 firecore-battle-net = { path=".." }
-firecore-dependencies = { git="https://github.com/DoNotDoughnut/firecore-dependencies" }
 firecore-battle-gui = { git="https://github.com/DoNotDoughnut/firecore-battle-gui", default-features = false }
 log = "0.4"
 simple_logger = "1"

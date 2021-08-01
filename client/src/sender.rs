@@ -1,38 +1,31 @@
-use std::{collections::VecDeque, net::SocketAddr, sync::Arc};
-
-use common::battle::client::{BattleClient, BattleEndpoint};
-
-use gui::pokedex::engine::tetra::Context;
-
-use common::{
-    pokedex::{
-        pokemon::{
-            instance::PokemonInstance, party::PokemonParty, stat::StatSet, Pokedex, PokemonId,
-        },
-        trainer::TrainerData,
-        Dex,
-    },
-    ser,
-};
-
 use log::{debug, info, warn};
-
-use gui::BattlePlayerGui;
+use std::{net::SocketAddr, sync::Arc};
 
 use common::{
+    Queue,
+    battle::BattleEndpoint,
     net::network::{split, Endpoint, NetEvent, NetworkController, SendStatus},
+    pokedex::{
+        id::Dex,
+        pokemon::{stat::StatSet, Pokedex, PokemonId, PokemonInstance, PokemonParty},
+    },
     rand::Rng,
+    ser,
     sync::Mutex,
     uuid::Uuid,
     NetClientMessage, NetServerMessage, Player,
 };
 
-use crate::ConnectState;
+use gui::BattlePlayerGui;
+
+use crate::{ConnectState, GameContext};
+
+type MessageQueue = Arc<Mutex<Queue<NetServerMessage>>>;
 
 pub struct BattleConnection {
     controller: NetworkController,
     endpoint: Endpoint,
-    messages: Arc<Mutex<VecDeque<NetServerMessage>>>,
+    messages: MessageQueue,
     name: Option<String>,
 }
 
@@ -42,13 +35,11 @@ impl BattleConnection {
 
         info!("Connecting to {}", address);
 
-        let (endpoint, ..) = controller
+        let (server, ..) = controller
             .connect(common::PROTOCOL, address)
             .unwrap_or_else(|err| panic!("Could not connect to {} with error {}", address, err));
 
-        let messages = Arc::new(Mutex::new(VecDeque::new()));
-
-        let server = endpoint;
+        let messages: MessageQueue = Default::default();
 
         let receiver = messages.clone();
 
@@ -63,7 +54,7 @@ impl BattleConnection {
                         match ser::deserialize::<NetServerMessage>(&bytes) {
                             Ok(message) => {
                                 debug!("Received message: {:?}", message);
-                                receiver.lock().push_back(message);
+                                receiver.lock().push(message);
                             }
                             Err(err) => {
                                 warn!("Could not receive server message with error {}", err)
@@ -81,7 +72,7 @@ impl BattleConnection {
 
         Self {
             controller,
-            endpoint,
+            endpoint: server,
             messages,
             name,
         }
@@ -91,7 +82,7 @@ impl BattleConnection {
         self.controller.remove(self.endpoint.resource_id());
     }
 
-    pub fn wait_confirm(&mut self) -> Option<ConnectState> {
+    pub fn wait_confirm<R: Rng>(&mut self, random: &mut R) -> Option<ConnectState> {
         if let Some(message) = self.recv() {
             match message {
                 NetServerMessage::CanConnect(accepted) => {
@@ -99,40 +90,29 @@ impl BattleConnection {
                         true => {
                             info!("Server accepted connection!");
 
-                            let mut pokemon = PokemonParty::new();
+                            let mut party = PokemonParty::new();
 
-                            let mut rand = common::rand::thread_rng();
-
-                            for _ in 0..pokemon.capacity() {
-                                let id = rand.gen_range(1..Pokedex::len() as PokemonId);
-                                pokemon.push(PokemonInstance::generate_with_level(
-                                    id,
+                            for _ in 0..party.capacity() {
+                                let id = random.gen_range(1..Pokedex::len() as PokemonId);
+                                party.push(PokemonInstance::generate_with_level(
+                                    random,
+                                    &id,
                                     50,
                                     Some(StatSet::uniform(15)),
                                 ));
                             }
 
-                            let npc_type = "rival".parse().unwrap();
                             let name = self.name.take().unwrap_or_else(|| {
                                 use common::rand::distributions::Alphanumeric;
-                                let mut rng = common::rand::thread_rng();
                                 std::iter::repeat(())
-                                    .map(|()| rng.sample(Alphanumeric))
+                                    .map(|()| random.sample(Alphanumeric))
                                     .map(char::from)
                                     .take(7)
                                     .collect()
                             });
 
                             self.send(&NetClientMessage::Connect(
-                                Player {
-                                    trainer: TrainerData {
-                                        npc_type,
-                                        prefix: "Trainer".to_owned(),
-                                        name,
-                                    },
-                                    party: pokemon,
-                                    // client: NetBattleClient(self.client),
-                                },
+                                Player { name, party },
                                 common::VERSION,
                             ));
 
@@ -150,14 +130,15 @@ impl BattleConnection {
     pub fn gui_receive(
         &mut self,
         gui: &mut BattlePlayerGui<Uuid>,
-        ctx: &mut Context,
+        ctx: &mut GameContext,
         state: &mut ConnectState,
     ) {
         while let Some(message) = self.recv() {
             match message {
                 NetServerMessage::Game(message) => {
                     debug!("received message {:?}", message);
-                    gui.give_client(message);
+                    gui.send(message); // give gui the message
+                    gui.process(&ctx.pokedex); // process messages
                 }
                 NetServerMessage::WrongVersion => {
                     warn!("Could not connect to server as it is version incompatible!");
@@ -167,15 +148,7 @@ impl BattleConnection {
                     debug!("Received begin message!");
                     *state = ConnectState::ConnectedPlay;
                     gui.start(true);
-                    gui.on_begin(ctx);
-                    // gui.player
-                    //     .renderer
-                    //     .iter_mut()
-                    //     .for_each(|a| a.status.spawn());
-                    // gui.opponent
-                    //     .renderer
-                    //     .iter_mut()
-                    //     .for_each(|a| a.status.spawn());
+                    gui.on_begin(&ctx.pokedex);
                 }
                 NetServerMessage::CanConnect(..) => (),
                 NetServerMessage::End => *state = ConnectState::Closed,
@@ -184,7 +157,7 @@ impl BattleConnection {
     }
 
     pub fn gui_send(&mut self, gui: &mut BattlePlayerGui<Uuid>) {
-        while let Some(message) = gui.give_server() {
+        while let Some(message) = BattleEndpoint::receive(gui) {
             self.send(&NetClientMessage::Game(message));
         }
     }
@@ -201,6 +174,6 @@ impl BattleConnection {
     }
 
     pub fn recv(&mut self) -> Option<NetServerMessage> {
-        self.messages.lock().pop_front()
+        self.messages.lock().pop()
     }
 }

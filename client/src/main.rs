@@ -2,21 +2,18 @@
 
 extern crate firecore_battle_gui as gui;
 extern crate firecore_battle_net as common;
+pub use gui::pokedex;
+pub use gui::pokedex::engine;
 
 use std::{
     net::{IpAddr, SocketAddr},
+    ops::{Deref, DerefMut},
     rc::Rc,
 };
 
-use common::{
-    borrow::BorrowableMut,
-    pokedex::item::{bag::Bag, ItemStack},
-    ser,
-    uuid::Uuid,
-};
+use common::{rand::prelude::ThreadRng, uuid::Uuid};
 
-use gui::pokedex::engine::{
-    self,
+use engine::{
     graphics::draw_text_left,
     tetra::{
         graphics::{
@@ -25,16 +22,19 @@ use gui::pokedex::engine::{
             Color,
         },
         input::{self, Key},
-        time::{self, Timestep},
-        Context, ContextBuilder, Event, Result, State,
+        time, Context, ContextBuilder, Result, State,
     },
     util::{HEIGHT, WIDTH},
 };
 
-use gui::{
-    pokedex::gui::{bag::BagGui, party::PartyGui},
-    BattlePlayerGui,
+use pokedex::{
+    context::PokedexClientContext,
+    engine::{text::TextColor, EngineContext},
+    gui::{bag::BagGui, party::PartyGui},
+    item::bag::Bag,
 };
+
+use gui::BattlePlayerGui;
 
 use log::{info, warn, LevelFilter};
 
@@ -57,13 +57,49 @@ fn main() -> Result {
     l.init()
         .unwrap_or_else(|err| panic!("Could not initialize logger with error {}", err));
 
-    ContextBuilder::new(TITLE, (WIDTH * SCALE) as _, (HEIGHT * SCALE) as _)
-        .vsync(true)
-        .resizable(true)
-        .show_mouse(true)
-        .timestep(Timestep::Variable)
-        .build()?
-        .run(GameState::new)
+    let mut engine = engine::build(
+        ContextBuilder::new(TITLE, (WIDTH * SCALE) as _, (HEIGHT * SCALE) as _)
+            .vsync(true)
+            .resizable(true)
+            .show_mouse(true),
+        common::ser::deserialize(include_bytes!("../fonts.bin"))
+            .unwrap_or_else(|err| panic!("Could not read fonts with error {}", err)),
+    )?;
+
+    let pokedex = common::ser::deserialize(include_bytes!("../dex.bin"))
+        .unwrap_or_else(|err| panic!("Could not read pokedex with error {}", err));
+
+    let pokedex = PokedexClientContext::new(&mut engine, pokedex)?;
+
+    let mut ctx = GameContext {
+        engine,
+        pokedex,
+        random: common::rand::thread_rng(),
+        bag: Default::default(),
+    };
+
+    engine::run(&mut ctx, GameState::new)
+}
+
+pub struct GameContext {
+    pub engine: EngineContext,
+    pub pokedex: PokedexClientContext,
+    pub random: ThreadRng,
+    pub bag: Bag,
+}
+
+impl Deref for GameContext {
+    type Target = Context;
+
+    fn deref(&self) -> &Self::Target {
+        &self.engine.tetra
+    }
+}
+
+impl DerefMut for GameContext {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.engine.tetra
+    }
 }
 
 pub enum States {
@@ -91,50 +127,26 @@ struct GameState {
 }
 
 impl GameState {
-    pub fn new(ctx: &mut Context) -> Result<Self> {
-        let party = Rc::new(PartyGui::new(ctx));
-        let bag = Rc::new(BagGui::new(ctx));
+    pub fn new(ctx: &mut GameContext) -> Result<Self> {
+        let party = Rc::new(PartyGui::new(&ctx.pokedex));
+        let bag = Rc::new(BagGui::new(&ctx.pokedex));
+
+        let mut gui = BattlePlayerGui::new(ctx, party, bag);
+
+        gui.opponent.trainer = Some("rival".parse().unwrap());
 
         let scaler =
             ScreenScaler::with_window_size(ctx, WIDTH as _, HEIGHT as _, ScalingMode::ShowAll)?;
         Ok(Self {
             state: States::Connect(String::new()),
-            gui: BattlePlayerGui::new(
-                ctx,
-                party,
-                bag,
-                BorrowableMut::Owned(Bag {
-                    items: vec![ItemStack::new(&"hyper_potion".parse().unwrap(), 3)],
-                }),
-                Uuid::default(),
-            ),
+            gui,
             scaler,
         })
     }
 }
 
-impl State for GameState {
-    fn begin(&mut self, ctx: &mut Context) -> Result {
-        engine::graphics::text::init(
-            ctx,
-            ser::deserialize(include_bytes!("../fonts.bin")).unwrap(),
-        )?;
-        gui::pokedex::init(
-            ctx,
-            ser::deserialize(include_bytes!("../dex.bin")).unwrap(),
-            #[cfg(feature = "audio")]
-            |pokemon| {
-                if let Err(_) = engine::audio::sound::add_sound(engine::audio::serialized::SerializedSoundData {
-                    bytes: std::mem::take(&mut pokemon.cry_ogg),
-                    sound: engine::audio::sound::Sound::variant(gui::pokedex::CRY_ID, Some(pokemon.pokemon.id)),
-                }) {
-                    // warn!("Error adding pokemon cry: {}", err);
-                }
-            },
-        )
-    }
-
-    fn end(&mut self, _ctx: &mut Context) -> Result {
+impl State<GameContext> for GameState {
+    fn end(&mut self, _ctx: &mut GameContext) -> Result {
         match &mut self.state {
             States::Connect(..) => (),
             States::Connected(connection, ..) => connection.end(),
@@ -142,7 +154,7 @@ impl State for GameState {
         Ok(())
     }
 
-    fn update(&mut self, ctx: &mut Context) -> Result {
+    fn update(&mut self, ctx: &mut GameContext) -> Result {
         match &mut self.state {
             States::Connect(string) => {
                 if input::is_key_pressed(ctx, Key::Backspace) {
@@ -183,7 +195,7 @@ impl State for GameState {
             }
             States::Connected(connection, state) => match state {
                 ConnectState::WaitConfirm => {
-                    if let Some(connected) = connection.wait_confirm() {
+                    if let Some(connected) = connection.wait_confirm(&mut ctx.random) {
                         *state = connected;
                     }
                 }
@@ -197,8 +209,12 @@ impl State for GameState {
                 }
                 ConnectState::ConnectedPlay => {
                     connection.gui_receive(&mut self.gui, ctx, state);
-                    self.gui
-                        .update(ctx, time::get_delta_time(ctx).as_secs_f32());
+                    self.gui.update(
+                        &ctx.engine,
+                        &ctx.pokedex,
+                        time::get_delta_time(ctx).as_secs_f32(),
+                        &mut ctx.bag,
+                    );
                     connection.gui_send(&mut self.gui);
                 }
             },
@@ -206,48 +222,75 @@ impl State for GameState {
         Ok(())
     }
 
-    fn draw(&mut self, ctx: &mut Context) -> Result {
+    fn draw(&mut self, ctx: &mut GameContext) -> Result {
         graphics::clear(ctx, Color::BLACK);
         {
             match &self.state {
                 States::Connect(ip) => {
-                    draw_text_left(ctx, &1, "Input IP Address", &Color::WHITE, 5.0, 5.0);
-                    draw_text_left(ctx, &1, ip, &Color::WHITE, 5.0, 25.0);
+                    draw_text_left(
+                        &mut ctx.engine,
+                        &1,
+                        "Input IP Address",
+                        TextColor::White,
+                        5.0,
+                        5.0,
+                    );
+                    draw_text_left(&mut ctx.engine, &1, ip, TextColor::White, 5.0, 25.0);
                 }
                 States::Connected(.., connected) => match connected {
-                    ConnectState::WaitConfirm => {
-                        draw_text_left(ctx, &1, "Connecting...", &Color::WHITE, 5.0, 5.0)
-                    }
+                    ConnectState::WaitConfirm => draw_text_left(
+                        &mut ctx.engine,
+                        &1,
+                        "Connecting...",
+                        TextColor::White,
+                        5.0,
+                        5.0,
+                    ),
                     ConnectState::ConnectedWait => {
-                        draw_text_left(ctx, &1, "Connected!", &Color::WHITE, 5.0, 5.0);
-                        draw_text_left(ctx, &1, "Waiting for opponent", &Color::WHITE, 5.0, 25.0);
+                        draw_text_left(
+                            &mut ctx.engine,
+                            &1,
+                            "Connected!",
+                            TextColor::White,
+                            5.0,
+                            5.0,
+                        );
+                        draw_text_left(
+                            &mut ctx.engine,
+                            &1,
+                            "Waiting for opponent",
+                            TextColor::White,
+                            5.0,
+                            25.0,
+                        );
                     }
                     ConnectState::WrongVersion(..) => draw_text_left(
-                        ctx,
+                        &mut ctx.engine,
                         &1,
                         "Server version is incompatible!",
-                        &Color::WHITE,
+                        TextColor::White,
                         5.0,
                         25.0,
                     ),
                     ConnectState::ConnectedPlay => {
                         graphics::set_canvas(ctx, self.scaler.canvas());
                         graphics::clear(ctx, Color::BLACK);
-                        self.gui.draw(ctx);
+                        self.gui.draw(&mut ctx.engine, &ctx.pokedex);
                         graphics::reset_transform_matrix(ctx);
                         graphics::reset_canvas(ctx);
                         self.scaler.draw(ctx);
                     }
-                    ConnectState::Closed => {
-                        draw_text_left(ctx, &1, "Connection Closed", &Color::WHITE, 5.0, 5.0)
-                    }
+                    ConnectState::Closed => draw_text_left(
+                        &mut ctx.engine,
+                        &1,
+                        "Connection Closed",
+                        TextColor::White,
+                        5.0,
+                        5.0,
+                    ),
                 },
             }
         }
-        Ok(())
-    }
-
-    fn event(&mut self, _ctx: &mut Context, _event: Event) -> Result {
         Ok(())
     }
 }

@@ -6,7 +6,7 @@ fn main() {
             "../assets/pokedex/items",
             "../assets/pokedex/trainers",
             None,
-            false,
+            None,
         ),
         "dex.bin",
     );

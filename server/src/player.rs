@@ -1,14 +1,12 @@
-use std::{collections::VecDeque, sync::Arc};
+use std::sync::Arc;
 
 use common::{
     battle::{
-        client::{BattleClient, BattleEndpoint},
         message::{ClientMessage, ServerMessage},
         player::{BattlePlayer, PlayerSettings},
+        BattleEndpoint,
     },
     net::network::{Endpoint, NetworkController},
-    pokedex::pokemon::instance::BorrowedPokemon,
-    ser::serialize,
     uuid::Uuid,
     NetServerMessage, Player,
 };
@@ -30,16 +28,11 @@ impl BattleServerPlayer {
         receiver: Arc<Receiver>,
         battle_size: u8,
     ) -> BattlePlayer<Uuid> {
-        receiver.insert(player.0, VecDeque::new());
+        receiver.insert(player.0, Default::default());
         BattlePlayer::new(
             Uuid::new_v4(),
-            player
-                .1
-                .party
-                .into_iter()
-                .map(BorrowedPokemon::Owned)
-                .collect(),
-            Some(player.1.trainer),
+            player.1.party,
+            Some(player.1.name),
             PlayerSettings {
                 gains_exp: false,
                 ..Default::default()
@@ -55,18 +48,16 @@ impl BattleServerPlayer {
 }
 
 impl BattleEndpoint<Uuid> for BattleServerPlayer {
-    fn give_client(&mut self, message: ServerMessage<Uuid>) {
+    fn send(&mut self, message: ServerMessage<Uuid>) {
         debug!("Endpoint {} is getting sent {:?}", self.endpoint, message);
         send(
             &self.controller,
             self.endpoint,
-            &serialize(&NetServerMessage::Game(message)).unwrap(),
+            &crate::serialize(&NetServerMessage::Game(message)),
         );
     }
-}
 
-impl BattleClient<Uuid> for BattleServerPlayer {
-    fn give_server(&mut self) -> Option<ClientMessage> {
-        self.receiver.get_mut(&self.endpoint).unwrap().pop_front()
+    fn receive(&mut self) -> Option<ClientMessage> {
+        crate::get_endpoint(&self.receiver, &self.endpoint).pop()
     }
 }

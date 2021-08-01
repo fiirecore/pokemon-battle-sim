@@ -1,9 +1,8 @@
 [package]
 name = "dex-builder-mini"
-version = "0.3.0"
+version = "0.3.1"
 authors = ["Rhys Holloway <rhyswilliamholloway@gmail.com>"]
 edition = "2018"
 
 [dependencies]
-firecore-pokedex-game = { git = "https://github.com/DoNotDoughnut/firecore-pokedex-game" }
-firecore-dependencies = { git = "https://github.com/DoNotDoughnut/firecore-dependencies", features = ["ser", "hash"] }
+firecore-pokedex-builder = { git = "https://github.com/DoNotDoughnut/firecore-pokedex-builder" }

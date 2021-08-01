@@ -1,15 +1,17 @@
 pub extern crate firecore_battle as battle;
+
 pub use battle::pokedex;
+pub extern crate bincode as ser;
 pub extern crate message_io as net;
+pub extern crate parking_lot as sync;
 pub extern crate rand;
 pub extern crate uuid;
-pub extern crate parking_lot as sync;
-pub use firecore_dependencies::*;
 
 use battle::message::{ClientMessage, ServerMessage};
 use net::network::Transport;
-use pokedex::{pokemon::party::PokemonParty, trainer::TrainerData};
+use pokedex::pokemon::PokemonParty;
 use serde::{Deserialize, Serialize};
+use std::collections::VecDeque;
 use uuid::Uuid;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -35,6 +37,29 @@ pub enum NetServerMessage {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Player {
-    pub trainer: TrainerData,
+    pub name: String,
     pub party: PokemonParty,
+}
+
+#[derive(Debug)]
+pub struct Queue<M> {
+    inner: VecDeque<M>,
+}
+
+impl<M> Default for Queue<M> {
+    fn default() -> Self {
+        Self {
+            inner: Default::default(),
+        }
+    }
+}
+
+impl<M> Queue<M> {
+    pub fn push(&mut self, message: M) {
+        self.inner.push_front(message)
+    }
+
+    pub fn pop(&mut self) -> Option<M> {
+        self.inner.pop_back()
+    }
 }
