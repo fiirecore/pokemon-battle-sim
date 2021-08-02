@@ -26,6 +26,7 @@ pub struct BattleConnection {
     controller: NetworkController,
     endpoint: Endpoint,
     messages: MessageQueue,
+    party: PokemonParty,
     name: Option<String>,
 }
 
@@ -75,6 +76,7 @@ impl BattleConnection {
             endpoint: server,
             messages,
             name,
+            party: Default::default(),
         }
     }
 
@@ -111,10 +113,16 @@ impl BattleConnection {
                                     .collect()
                             });
 
-                            self.send(&NetClientMessage::Connect(
+                            let m = NetClientMessage::Connect(
                                 Player { name, party },
                                 common::VERSION,
-                            ));
+                            );
+
+                            self.send(&m);
+
+                            if let NetClientMessage::Connect(p, ..) = m {
+                                self.party = p.party;
+                            }
 
                             ConnectState::ConnectedWait
                         }
@@ -138,7 +146,7 @@ impl BattleConnection {
                 NetServerMessage::Game(message) => {
                     debug!("received message {:?}", message);
                     gui.send(message); // give gui the message
-                    gui.process(&ctx.pokedex); // process messages
+                    gui.process(&ctx.pokedex, &mut self.party); // process messages
                 }
                 NetServerMessage::WrongVersion => {
                     warn!("Could not connect to server as it is version incompatible!");

@@ -8,7 +8,7 @@ repository = "https://github.com/DoNotDoughnut/pokemon-battle-net"
 
 [features]
 default = []
-server = ["firecore-battle/host"]
+server = ["firecore-battle/host", "firecore-battle/default_scripting"]
 
 [profile.dev]
 panic = "abort"

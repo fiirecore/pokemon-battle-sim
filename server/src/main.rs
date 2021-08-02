@@ -20,7 +20,7 @@ use hashbrown::HashMap;
 use common::{
     battle::{message::ClientMessage, Battle, BattleData, BattleType},
     net::network::{split, Endpoint, NetEvent, NetworkController, SendStatus},
-    pokedex::moves::usage::script::engine,
+    pokedex::moves::script::rhai::RhaiMoveEngine,
     rand::prelude::ThreadRng,
     ser, NetClientMessage, NetServerMessage, Queue,
 };
@@ -80,7 +80,7 @@ fn main() {
     info!("Listening on port {}", configuration.port);
 
     let mut players = HashMap::with_capacity(2);
-    let engine = engine::<ThreadRng>();
+    let mut engine = RhaiMoveEngine::new::<ThreadRng>();
 
     // Waiting room
 
@@ -235,7 +235,7 @@ fn main() {
     let mut random = common::rand::thread_rng();
 
     while !battle.finished() && running.load(Ordering::Relaxed) {
-        battle.update(&mut random, &engine);
+        battle.update(&mut random, &mut engine);
         thread::sleep(Duration::from_millis(5)); // To - do: only process when messages are received, stay idle and dont loop when not received
     }
 

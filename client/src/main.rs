@@ -133,7 +133,7 @@ impl GameState {
 
         let mut gui = BattlePlayerGui::new(ctx, party, bag);
 
-        gui.opponent.trainer = Some("rival".parse().unwrap());
+        gui.remote.trainer = Some("rival".parse().unwrap());
 
         let scaler =
             ScreenScaler::with_window_size(ctx, WIDTH as _, HEIGHT as _, ScalingMode::ShowAll)?;
