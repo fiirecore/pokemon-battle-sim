@@ -1,12 +1,12 @@
 [package]
 name = "pokemon-battle-server"
-version = "0.4.0"
-authors = ["Rhys Holloway <rhyswilliamholloway@gmail.com>"]
+version = "0.5.0"
+authors = ["Rhys H <donotdoughnut99@gmail.com>"]
 edition = "2018"
 build = "build.rs"
 
 [dependencies]
-firecore-battle-net = { path = "..", features = ["server"] }
+firecore-battle-net = { path = "..", features = ["build", "server"] }
 ctrlc = "3.1"
 toml = "0.5"
 serde = { version = "1.0", features = ["derive"] }
@@ -14,10 +14,8 @@ simple_logger = "1"
 dashmap = "4.0"
 log = "0.4"
 hashbrown = "0.11"
+# crossbeam-channel = "0.5"
 
 [build-dependencies]
-firecore-pokedex-builder = { git = "https://github.com/DoNotDoughnut/firecore-pokedex-builder" }
-dex-builder-mini = { path = "./dex-builder-mini" }
-
-[target.'cfg(windows)'.build-dependencies]
-winres = "0.1"
+firecore-battle-builder = { git = "https://github.com/DoNotDoughnut/firecore-battle-builder", rev = "57708e0" }
+bincode = "1.3"

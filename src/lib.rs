@@ -1,44 +1,59 @@
 pub extern crate firecore_battle as battle;
 
 pub use battle::pokedex;
-pub extern crate bincode as ser;
+pub use bincode::{deserialize, serialize, Error as SerdeError};
+pub extern crate bincode;
 pub extern crate message_io as net;
 pub extern crate parking_lot as sync;
 pub extern crate rand;
-pub extern crate uuid;
 
-use battle::message::{ClientMessage, ServerMessage};
+use battle::{
+    message::{ClientMessage, ServerMessage},
+    pokedex::pokemon::{owned::SavedPokemon, party::Party},
+};
 use net::network::Transport;
-use pokedex::pokemon::PokemonParty;
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
-use uuid::Uuid;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
-pub const DEFAULT_PORT: u16 = 28528;
+pub type Id = u8;
+pub const AS: usize = 2;
 
+pub const DEFAULT_PORT: u16 = 28528;
 pub const PROTOCOL: Transport = Transport::FramedTcp;
 
 #[derive(Debug, Deserialize, Serialize)]
-pub enum NetClientMessage<'a> {
-    Connect(Player, &'a str), // player, dex hashes
-    Game(ClientMessage),
+pub enum NetClientMessage<ID> {
+    /// Request to connect with version string
+    RequestJoin(String),
+    /// Join the server
+    Join(Player),
+    /// Send game messages to server
+    Game(ClientMessage<ID>),
 }
 
 #[derive(Debug, Deserialize, Serialize)]
-pub enum NetServerMessage {
-    CanConnect(bool),
+pub enum NetServerMessage<ID, const AS: usize> {
+    Validate(ConnectMessage),
+    Game(ServerMessage<ID, AS>),
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub enum ConnectMessage {
+    CanJoin,
+    /// Client has not requested to join by sending version
+    NoRequest,
+    AlreadyConnected,
+    ConnectionReplaced,
     WrongVersion,
-    Begin,
-    End,
-    Game(ServerMessage<Uuid>),
+    InProgress,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Player {
     pub name: String,
-    pub party: PokemonParty,
+    pub party: Party<SavedPokemon>,
 }
 
 #[derive(Debug)]

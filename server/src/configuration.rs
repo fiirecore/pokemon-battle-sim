@@ -9,6 +9,7 @@ use std::{
 pub struct Configuration {
     pub port: u16,
     pub battle_size: u8,
+    // pub ai: u8,
 }
 
 impl Configuration {
@@ -65,6 +66,7 @@ impl Default for Configuration {
         Self {
             port: common::DEFAULT_PORT,
             battle_size: 1,
+            // ai: 0,
         }
     }
 }

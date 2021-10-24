@@ -2,16 +2,24 @@
 
 extern crate firecore_battle_gui as gui;
 extern crate firecore_battle_net as common;
-pub use gui::pokedex;
 pub use gui::pokedex::engine;
+use serde::{de::DeserializeOwned, Serialize};
 
 use std::{
+    fmt::Debug,
+    hash::Hash,
     net::{IpAddr, SocketAddr},
     ops::{Deref, DerefMut},
     rc::Rc,
 };
 
-use common::{rand::prelude::ThreadRng, uuid::Uuid};
+use common::{
+    battle::endpoint::MpscEndpoint,
+    deserialize,
+    pokedex::{item::Item, moves::Move, pokemon::Pokemon, BasicDex},
+    rand::prelude::ThreadRng,
+    Id, AS,
+};
 
 use engine::{
     graphics::draw_text_left,
@@ -27,11 +35,10 @@ use engine::{
     util::{HEIGHT, WIDTH},
 };
 
-use pokedex::{
+use gui::pokedex::{
     context::PokedexClientContext,
     engine::{text::TextColor, EngineContext},
     gui::{bag::BagGui, party::PartyGui},
-    item::bag::Bag,
 };
 
 use gui::BattlePlayerGui;
@@ -49,7 +56,7 @@ fn main() -> Result {
     let l = simple_logger::SimpleLogger::new();
 
     #[cfg(debug_assertions)]
-    let l = l.with_level(LevelFilter::Debug);
+    let l = l.with_level(LevelFilter::Trace);
 
     #[cfg(not(debug_assertions))]
     let l = l.with_level(LevelFilter::Info);
@@ -62,33 +69,38 @@ fn main() -> Result {
             .vsync(true)
             .resizable(true)
             .show_mouse(true),
-        common::ser::deserialize(include_bytes!("../fonts.bin"))
+        deserialize(include_bytes!("../fonts.bin"))
             .unwrap_or_else(|err| panic!("Could not read fonts with error {}", err)),
     )?;
 
-    let pokedex = common::ser::deserialize(include_bytes!("../dex.bin"))
+    let (pokedex, movedex, itemdex) =
+        deserialize::<(BasicDex<Pokemon>, BasicDex<Move>, BasicDex<Item>)>(include_bytes!(
+            "../../dex.bin"
+        ))
         .unwrap_or_else(|err| panic!("Could not read pokedex with error {}", err));
 
-    let pokedex = PokedexClientContext::new(&mut engine, pokedex)?;
+    let serengine: gui::pokedex::serialize::SerializedPokedexEngine =
+        deserialize(include_bytes!("../dex-engine.bin"))
+            .unwrap_or_else(|err| panic!("Could not read pokedex engine data with error {}", err));
+
+    let dex = PokedexClientContext::new(&mut engine, &pokedex, &movedex, &itemdex, serengine)?;
 
     let mut ctx = GameContext {
         engine,
-        pokedex,
+        dex,
         random: common::rand::thread_rng(),
-        bag: Default::default(),
     };
 
-    engine::run(&mut ctx, GameState::new)
+    engine::run(&mut ctx, GameState::<Id, AS>::new)
 }
 
-pub struct GameContext {
+pub struct GameContext<'d> {
     pub engine: EngineContext,
-    pub pokedex: PokedexClientContext,
+    pub dex: PokedexClientContext<'d>,
     pub random: ThreadRng,
-    pub bag: Bag,
 }
 
-impl Deref for GameContext {
+impl<'d> Deref for GameContext<'d> {
     type Target = Context;
 
     fn deref(&self) -> &Self::Target {
@@ -96,18 +108,27 @@ impl Deref for GameContext {
     }
 }
 
-impl DerefMut for GameContext {
+impl<'d> DerefMut for GameContext<'d> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.engine.tetra
     }
 }
 
-pub enum States {
+pub enum States<
+    'd,
+    ID: Default + Clone + Debug + Eq + Hash + Serialize + DeserializeOwned + Send + 'static,
+    const AS: usize,
+> {
     Connect(String),
-    Connected(BattleConnection, ConnectState),
+    Connected(BattleConnection<'d, ID, AS>, ConnectState),
 }
 
-impl States {
+impl<
+        'd,
+        ID: Default + Clone + Debug + Eq + Hash + Serialize + DeserializeOwned + Send + 'static,
+        const AS: usize,
+    > States<'d, ID, AS>
+{
     pub const CONNECT: Self = Self::Connect(String::new());
 }
 
@@ -120,33 +141,60 @@ pub enum ConnectState {
     ConnectedPlay,
 }
 
-struct GameState {
-    state: States,
-    gui: BattlePlayerGui<Uuid>,
+struct GameState<
+    'd,
+    ID: Default + Clone + Debug + Eq + Hash + Serialize + DeserializeOwned + Send + 'static,
+    const AS: usize,
+> {
+    state: States<'d, ID, AS>,
+    gui: BattlePlayerGui<'d, ID, AS>,
+    gui_endpoint: MpscEndpoint<ID, AS>,
     scaler: ScreenScaler,
 }
 
-impl GameState {
-    pub fn new(ctx: &mut GameContext) -> Result<Self> {
-        let party = Rc::new(PartyGui::new(&ctx.pokedex));
-        let bag = Rc::new(BagGui::new(&ctx.pokedex));
+impl<
+        'd,
+        ID: Default + Clone + Debug + Eq + Hash + Serialize + DeserializeOwned + Send + 'static,
+        const AS: usize,
+    > GameState<'d, ID, AS>
+{
+    pub fn new(ctx: &mut GameContext<'d>) -> Result<Self> {
+        let party = Rc::new(PartyGui::new(&ctx.dex));
+        let bag = Rc::new(BagGui::new(&ctx.dex));
 
-        let mut gui = BattlePlayerGui::new(ctx, party, bag);
+        let mut gui = BattlePlayerGui::new(&mut ctx.engine.tetra, &ctx.dex, party, bag);
 
-        gui.remote.trainer = Some("rival".parse().unwrap());
+        let t = "rival".parse().ok();
 
-        let scaler =
-            ScreenScaler::with_window_size(ctx, WIDTH as _, HEIGHT as _, ScalingMode::ShowAll)?;
+        for remote in gui.remotes.values_mut() {
+            remote.trainer = t;
+        }
+
+        let scaler = ScreenScaler::with_window_size(
+            ctx,
+            WIDTH as _,
+            HEIGHT as _,
+            ScalingMode::ShowAllPixelPerfect,
+        )?;
+
+        let gui_endpoint = gui.endpoint();
+
         Ok(Self {
             state: States::Connect(String::new()),
             gui,
+            gui_endpoint,
             scaler,
         })
     }
 }
 
-impl State<GameContext> for GameState {
-    fn end(&mut self, _ctx: &mut GameContext) -> Result {
+impl<
+        'd,
+        ID: Default + Clone + Debug + Eq + Hash + Serialize + DeserializeOwned + Send + 'static,
+        const AS: usize,
+    > State<GameContext<'d>> for GameState<'d, ID, AS>
+{
+    fn end(&mut self, _ctx: &mut GameContext<'d>) -> Result {
         match &mut self.state {
             States::Connect(..) => (),
             States::Connected(connection, ..) => connection.end(),
@@ -154,7 +202,7 @@ impl State<GameContext> for GameState {
         Ok(())
     }
 
-    fn update(&mut self, ctx: &mut GameContext) -> Result {
+    fn update(&mut self, ctx: &mut GameContext<'d>) -> Result {
         match &mut self.state {
             States::Connect(string) => {
                 if input::is_key_pressed(ctx, Key::Backspace) {
@@ -175,6 +223,7 @@ impl State<GameContext> for GameState {
                                 info!("Connecting to server at {}", addr);
                                 self.state = States::Connected(
                                     BattleConnection::connect(
+                                        ctx.dex.itemdex,
                                         addr,
                                         strings.next().map(ToOwned::to_owned),
                                     ),
@@ -195,12 +244,18 @@ impl State<GameContext> for GameState {
             }
             States::Connected(connection, state) => match state {
                 ConnectState::WaitConfirm => {
-                    if let Some(connected) = connection.wait_confirm(&mut ctx.random) {
+                    if let Some(connected) = connection.wait_confirm(
+                        &mut ctx.random,
+                        &ctx.dex,
+                        time::get_delta_time(&ctx.engine.tetra).as_secs_f32(),
+                    ) {
                         *state = connected;
                     }
                 }
                 ConnectState::Closed => self.state = States::Connect(String::new()),
-                ConnectState::ConnectedWait => connection.gui_receive(&mut self.gui, ctx, state),
+                ConnectState::ConnectedWait => {
+                    connection.gui_receive(&mut self.gui, &mut self.gui_endpoint, ctx, state)
+                }
                 ConnectState::WrongVersion(remaining) => {
                     *remaining -= time::get_delta_time(ctx).as_secs_f32();
                     if remaining < &mut 0.0 {
@@ -208,21 +263,21 @@ impl State<GameContext> for GameState {
                     }
                 }
                 ConnectState::ConnectedPlay => {
-                    connection.gui_receive(&mut self.gui, ctx, state);
+                    connection.gui_receive(&mut self.gui, &mut self.gui_endpoint, ctx, state);
                     self.gui.update(
                         &ctx.engine,
-                        &ctx.pokedex,
+                        &ctx.dex,
                         time::get_delta_time(ctx).as_secs_f32(),
-                        &mut ctx.bag,
+                        &mut connection.bag,
                     );
-                    connection.gui_send(&mut self.gui);
+                    connection.gui_send(&mut self.gui_endpoint);
                 }
             },
         }
         Ok(())
     }
 
-    fn draw(&mut self, ctx: &mut GameContext) -> Result {
+    fn draw(&mut self, ctx: &mut GameContext<'d>) -> Result {
         graphics::clear(ctx, Color::BLACK);
         {
             match &self.state {
@@ -236,8 +291,16 @@ impl State<GameContext> for GameState {
                         5.0,
                     );
                     draw_text_left(&mut ctx.engine, &1, ip, TextColor::White, 5.0, 25.0);
+                    draw_text_left(
+                        &mut ctx.engine,
+                        &1,
+                        "Controls: X, Z, Arrow Keys",
+                        TextColor::White,
+                        5.0,
+                        45.0,
+                    );
                 }
-                States::Connected(.., connected) => match connected {
+                States::Connected(connection, connected) => match connected {
                     ConnectState::WaitConfirm => draw_text_left(
                         &mut ctx.engine,
                         &1,
@@ -275,7 +338,12 @@ impl State<GameContext> for GameState {
                     ConnectState::ConnectedPlay => {
                         graphics::set_canvas(ctx, self.scaler.canvas());
                         graphics::clear(ctx, Color::BLACK);
-                        self.gui.draw(&mut ctx.engine, &ctx.pokedex);
+                        self.gui.draw(
+                            &mut ctx.engine,
+                            &ctx.dex,
+                            &connection.party,
+                            &connection.bag,
+                        );
                         graphics::reset_transform_matrix(ctx);
                         graphics::reset_canvas(ctx);
                         self.scaler.draw(ctx);

@@ -1,6 +1,6 @@
 extern crate firecore_battle_net as common;
 
-use dashmap::DashMap;
+use dashmap::{mapref::one::RefMut, DashMap};
 use simple_logger::SimpleLogger;
 
 use std::{
@@ -18,17 +18,27 @@ use log::{debug, error, info, warn, LevelFilter};
 use hashbrown::HashMap;
 
 use common::{
-    battle::{message::ClientMessage, Battle, BattleData, BattleType},
+    battle::{
+        engine::default::moves::MoveExecution,
+        prelude::{Battle, BattleData, BattleType, ClientMessage, DefaultMoveEngine, PlayerData},
+    },
+    deserialize,
     net::network::{split, Endpoint, NetEvent, NetworkController, SendStatus},
-    pokedex::moves::script::rhai::RhaiMoveEngine,
+    pokedex::{
+        item::Item,
+        moves::{Move, MoveId},
+        pokemon::Pokemon,
+        BasicDex,
+    },
     rand::prelude::ThreadRng,
-    ser, NetClientMessage, NetServerMessage, Queue,
+    serialize as serialize2, ConnectMessage, Id, NetClientMessage, NetServerMessage, Queue, AS,
+    VERSION,
 };
 
 use crate::{configuration::Configuration, player::BattleServerPlayer};
 
 type RandomState = hashbrown::hash_map::DefaultHashBuilder;
-type Receiver = DashMap<Endpoint, Queue<ClientMessage>, RandomState>;
+type Receiver<ID> = DashMap<Endpoint, Queue<ClientMessage<ID>>, RandomState>;
 
 mod configuration;
 mod player;
@@ -55,10 +65,17 @@ fn main() {
 
     // Initialize pokemon
 
-    pokedex_init_mini(
-        ser::deserialize(include_bytes!("../dex.bin"))
-            .unwrap_or_else(|err| panic!("Could not deserialize pokedex with error {}", err)),
-    );
+    let (pokedex, movedex, itemdex) =
+        deserialize::<(BasicDex<Pokemon>, BasicDex<Move>, BasicDex<Item>)>(include_bytes!(
+            "../../dex.bin"
+        ))
+        .unwrap_or_else(|err| panic!("Could not deserialize dexes with error {}", err));
+
+    let (bmoves, scripts) =
+        deserialize::<(HashMap<MoveId, MoveExecution>, HashMap<MoveId, String>)>(include_bytes!(
+            "../battle.bin"
+        ))
+        .unwrap_or_else(|err| panic!("Could not deserialize battle moves with error {}", err));
 
     // Initialize networking
 
@@ -80,51 +97,68 @@ fn main() {
     info!("Listening on port {}", configuration.port);
 
     let mut players = HashMap::with_capacity(2);
-    let mut engine = RhaiMoveEngine::new::<ThreadRng>();
+
+    let mut engine = DefaultMoveEngine::new::<Id, ThreadRng>();
+
+    engine.scripting.scripts = scripts;
+
+    engine.moves = bmoves;
+
+    let mut random = common::rand::thread_rng();
+
+    // for ai in 0..configuration.ai {
+    //     players.insert(
+    //         PlayerKind::AI(ai),
+    //         Some(Player {
+    //             name: format!("AI {}", ai),
+    //             party: common::generate_party(&mut random, pokedex.len() as _),
+    //         }),
+    //     );
+    // }
 
     // Waiting room
 
-    while players.len() < 2 {
+    while players.values().flatten().count() < 2 {
         processor.process_poll_events_until_timeout(
             Duration::from_millis(5),
             |event| match event {
                 NetEvent::Accepted(endpoint, ..) => {
-                    info!("Client connected from endpoint {}", endpoint);
-                    send(
-                        &controller,
-                        endpoint,
-                        &serialize(&NetServerMessage::CanConnect(true)),
-                    );
+                    info!("Client connected from endpoint {}", endpoint)
                 }
                 NetEvent::Message(endpoint, bytes) => {
-                    match ser::deserialize::<NetClientMessage>(bytes) {
+                    match deserialize::<NetClientMessage<Id>>(bytes) {
                         Ok(message) => match message {
-                            NetClientMessage::Connect(player, version) => {
-                                info!("Endpoint at {} has sent player data.", endpoint);
-                                match version == common::VERSION {
-                                    true => {
-                                        if players.insert(endpoint, player).is_some() {
-                                            error!(
-                                            "Player at {} was replaced with another connection!",
-                                            endpoint
-                                        );
-                                            return;
-                                        }
-                                    }
-                                    false => {
-                                        info!(
-                                            "Player at {} connected with an invalid version!",
-                                            endpoint
-                                        );
-                                        send(
-                                            &controller,
-                                            endpoint,
-                                            &serialize(&NetServerMessage::WrongVersion),
-                                        );
-                                    }
+                            NetClientMessage::RequestJoin(version) => {
+                                send(
+                                    &controller,
+                                    endpoint,
+                                    &serialize(&NetServerMessage::<Id, AS>::Validate(
+                                        match version == VERSION {
+                                            true => ConnectMessage::CanJoin,
+                                            false => ConnectMessage::WrongVersion,
+                                        },
+                                    )),
+                                );
+                                if players.insert(endpoint, None).is_some() {
+                                    error!(
+                                        "Player at {} was replaced with another connection!",
+                                        endpoint
+                                    );
                                 }
                             }
-                            NetClientMessage::Game(..) => todo!(),
+                            NetClientMessage::Join(player) => match players.get_mut(&endpoint) {
+                                Some(p) => *p = Some(player),
+                                None => send(
+                                    &controller,
+                                    endpoint,
+                                    &serialize(&NetServerMessage::<Id, AS>::Validate(
+                                        ConnectMessage::AlreadyConnected,
+                                    )),
+                                ),
+                            },
+                            NetClientMessage::Game(..) => {
+                                warn!("Endpoint at {} is sending game messages", endpoint)
+                            }
                         },
                         Err(err) => warn!("Could not deserialize message with error {}", err),
                     }
@@ -144,38 +178,43 @@ fn main() {
 
     let receiver = Arc::new(DashMap::with_hasher(RandomState::new()));
 
-    let mut players = players.into_iter();
-
     let controller = Arc::new(controller);
+
+    let players = players
+        .into_iter()
+        .enumerate()
+        .flat_map(|(index, (endpoint, player))| match player {
+            Some(player) => Some(PlayerData::<Id, AS> {
+                id: index as u8,
+                name: Some(player.name),
+                party: player.party,
+                settings: Default::default(),
+                endpoint: BattleServerPlayer::new(endpoint, &controller, &receiver),
+            }),
+            None => {
+                send(
+                    &controller,
+                    endpoint,
+                    &serialize(&NetServerMessage::<Id, AS>::Validate(
+                        ConnectMessage::ConnectionReplaced,
+                    )),
+                );
+                None
+            }
+        });
 
     let mut battle = Battle::new(
         BattleData {
             type_: BattleType::Trainer,
         },
-        BattleServerPlayer::player(
-            players.next().unwrap(),
-            controller.clone(),
-            receiver.clone(),
-            configuration.battle_size,
-        ),
-        BattleServerPlayer::player(
-            players.next().unwrap(),
-            controller.clone(),
-            receiver.clone(),
-            configuration.battle_size,
-        ),
+        &mut random,
+        &pokedex,
+        &movedex,
+        &itemdex,
+        players,
     );
 
     battle.begin();
-
-    {
-        // Send signal to begin battle
-        let message = &serialize(&NetServerMessage::Begin);
-        for endpoint in receiver.iter() {
-            debug!("Sending start to {:?}", endpoint.key());
-            send(&controller, *endpoint.key(), message);
-        }
-    }
 
     let running = Arc::new(AtomicBool::new(true));
 
@@ -183,18 +222,8 @@ fn main() {
 
     let running_handle = running.clone();
 
-    let receiver_handle = receiver.clone();
-
-    let controller_handle = controller.clone();
-
-    ctrlc::set_handler(move || {
-        end_battle(
-            running_handle.as_ref(),
-            receiver_handle.as_ref(),
-            controller_handle.as_ref(),
-        )
-    })
-    .unwrap_or_else(|err| panic!("Could not set Ctrl + C handler with error {}", err));
+    ctrlc::set_handler(move || running_handle.store(false, Ordering::Relaxed))
+        .unwrap_or_else(|err| panic!("Could not set Ctrl + C handler with error {}", err));
 
     // Handle incoming messages
 
@@ -214,12 +243,18 @@ fn main() {
                 controller_handle.remove(resource_id);
             }
             NetEvent::Message(endpoint, bytes) => {
-                match ser::deserialize::<NetClientMessage>(bytes) {
+                match deserialize::<NetClientMessage<Id>>(bytes) {
                     Ok(message) => match message {
                         NetClientMessage::Game(message) => {
                             get_endpoint(&receiver_handle, &endpoint).push(message)
                         }
-                        NetClientMessage::Connect(..) => todo!("Client reconnecting."),
+                        NetClientMessage::RequestJoin(..) | NetClientMessage::Join(..) => send(
+                            &controller,
+                            endpoint,
+                            &serialize(&NetServerMessage::<Id, AS>::Validate(
+                                ConnectMessage::InProgress,
+                            )),
+                        ),
                     },
                     Err(err) => error!("Could not deserialize message with error {}", err),
                 }
@@ -232,17 +267,22 @@ fn main() {
         });
     });
 
-    let mut random = common::rand::thread_rng();
-
-    while !battle.finished() && running.load(Ordering::Relaxed) {
-        battle.update(&mut random, &mut engine);
+    while !battle.finished() {
+        if !running.load(Ordering::Relaxed) {
+            battle.end(None);
+        }
+        battle.update(&mut random, &mut engine, &itemdex);
         thread::sleep(Duration::from_millis(5)); // To - do: only process when messages are received, stay idle and dont loop when not received
     }
 
-    end_battle(running.as_ref(), receiver.as_ref(), &controller);
-
     info!("closing server.");
 }
+
+// #[derive(PartialEq, Eq, Hash)]
+// enum PlayerKind {
+//     Endpoint(Endpoint),
+//     AI(u8),
+// }
 
 fn send(controller: &NetworkController, endpoint: Endpoint, data: &[u8]) {
     match controller.send(endpoint, data) {
@@ -251,36 +291,15 @@ fn send(controller: &NetworkController, endpoint: Endpoint, data: &[u8]) {
     }
 }
 
-use common::pokedex::{
-    id::Dex,
-    item::{Item, Itemdex},
-    moves::{Move, Movedex},
-    pokemon::{Pokedex, Pokemon},
-};
-
-pub fn pokedex_init_mini(dex: (Vec<Pokemon>, Vec<Move>, Vec<Item>)) {
-    Pokedex::set(dex.0.into_iter().map(|p| (p.id, p)).collect());
-    Movedex::set(dex.1.into_iter().map(|m| (m.id, m)).collect());
-    Itemdex::set(dex.2.into_iter().map(|i| (i.id, i)).collect());
-}
-
-fn get_endpoint<'a>(
-    receiver: &'a Receiver,
+fn get_endpoint<'a, ID>(
+    receiver: &'a Receiver<ID>,
     endpoint: &Endpoint,
-) -> dashmap::mapref::one::RefMut<'a, Endpoint, Queue<ClientMessage>, RandomState> {
+) -> RefMut<'a, Endpoint, Queue<ClientMessage<ID>>, RandomState> {
     receiver
         .get_mut(&endpoint)
         .unwrap_or_else(|| panic!("Could not get message queue for endpoint {}", endpoint))
 }
 
-fn end_battle(running: &AtomicBool, receiver: &Receiver, controller: &NetworkController) {
-    let data = serialize(&NetServerMessage::End);
-    for endpoint in receiver.iter() {
-        controller.send(*endpoint.key(), &data);
-    }
-    running.store(false, Ordering::Relaxed);
-}
-
 fn serialize(s: &impl serde::Serialize) -> Vec<u8> {
-    ser::serialize(s).unwrap()
+    serialize2(s).unwrap()
 }

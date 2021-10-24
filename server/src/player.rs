@@ -1,54 +1,43 @@
-use std::sync::Arc;
+use std::{fmt::Debug, sync::Arc};
 
 use common::{
     battle::{
+        endpoint::{BattleEndpoint, ReceiveError},
         message::{ClientMessage, ServerMessage},
-        player::{BattlePlayer, PlayerSettings},
-        BattleEndpoint,
     },
     net::network::{Endpoint, NetworkController},
-    uuid::Uuid,
-    NetServerMessage, Player,
+    NetServerMessage,
 };
 
 use log::debug;
+use serde::Serialize;
 
 use crate::{send, Receiver};
 
-pub struct BattleServerPlayer {
+pub struct BattleServerPlayer<ID: Serialize + Debug> {
     endpoint: Endpoint,
     controller: Arc<NetworkController>,
-    receiver: Arc<Receiver>,
+    receiver: Arc<Receiver<ID>>,
 }
 
-impl BattleServerPlayer {
-    pub fn player(
-        player: (Endpoint, Player),
-        controller: Arc<NetworkController>,
-        receiver: Arc<Receiver>,
-        battle_size: u8,
-    ) -> BattlePlayer<Uuid> {
-        receiver.insert(player.0, Default::default());
-        BattlePlayer::new(
-            Uuid::new_v4(),
-            player.1.party,
-            Some(player.1.name),
-            PlayerSettings {
-                gains_exp: false,
-                ..Default::default()
-            },
-            Box::new(BattleServerPlayer {
-                endpoint: player.0,
-                controller,
-                receiver,
-            }),
-            battle_size as usize,
-        )
+impl<ID: Serialize + Debug> BattleServerPlayer<ID> {
+    pub fn new(
+        endpoint: Endpoint,
+        controller: &Arc<NetworkController>,
+        receiver: &Arc<Receiver<ID>>,
+    ) -> Box<Self> {
+        receiver.insert(endpoint, Default::default());
+
+        Box::new(Self {
+            endpoint,
+            controller: controller.clone(),
+            receiver: receiver.clone(),
+        })
     }
 }
 
-impl BattleEndpoint<Uuid> for BattleServerPlayer {
-    fn send(&mut self, message: ServerMessage<Uuid>) {
+impl<ID: Serialize + Debug, const AS: usize> BattleEndpoint<ID, AS> for BattleServerPlayer<ID> {
+    fn send(&mut self, message: ServerMessage<ID, AS>) {
         debug!("Endpoint {} is getting sent {:?}", self.endpoint, message);
         send(
             &self.controller,
@@ -57,7 +46,9 @@ impl BattleEndpoint<Uuid> for BattleServerPlayer {
         );
     }
 
-    fn receive(&mut self) -> Option<ClientMessage> {
-        crate::get_endpoint(&self.receiver, &self.endpoint).pop()
+    fn receive(&mut self) -> Result<ClientMessage<ID>, Option<ReceiveError>> {
+        crate::get_endpoint(&self.receiver, &self.endpoint)
+            .pop()
+            .ok_or(None)
     }
 }
