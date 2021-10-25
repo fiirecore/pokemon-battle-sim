@@ -1061,7 +1061,7 @@ dependencies = [
 
 [[package]]
 name = "pokemon-battle-client"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "bincode",
  "firecore-battle-gui",

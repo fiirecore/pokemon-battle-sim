@@ -8,7 +8,6 @@ use serde::{de::DeserializeOwned, Serialize};
 use std::{
     fmt::Debug,
     hash::Hash,
-    net::{IpAddr, SocketAddr},
     ops::{Deref, DerefMut},
     rc::Rc,
 };
@@ -16,9 +15,10 @@ use std::{
 use common::{
     battle::endpoint::MpscEndpoint,
     deserialize,
+    net::network::{RemoteAddr, ToRemoteAddr},
     pokedex::{item::Item, moves::Move, pokemon::Pokemon, BasicDex},
     rand::prelude::ThreadRng,
-    Id, AS,
+    Id, AS, DEFAULT_PORT,
 };
 
 use engine::{
@@ -35,11 +35,7 @@ use engine::{
     util::{HEIGHT, WIDTH},
 };
 
-use gui::pokedex::{
-    context::PokedexClientContext,
-    engine::{text::TextColor, EngineContext},
-    gui::{bag::BagGui, party::PartyGui},
-};
+use gui::pokedex::{context::PokedexClientContext, engine::{EngineContext, tetra::Event, text::TextColor}, gui::{bag::BagGui, party::PartyGui}};
 
 use gui::BattlePlayerGui;
 
@@ -211,12 +207,25 @@ impl<
                 if input::is_key_pressed(ctx, Key::Enter) {
                     let mut strings = string.split_ascii_whitespace();
                     if let Some(ip) = strings.next() {
-                        let addr =
-                            ip.parse::<SocketAddr>()
-                                .or_else(|err| match ip.parse::<IpAddr>() {
-                                    Ok(addr) => Ok(SocketAddr::new(addr, common::DEFAULT_PORT)),
-                                    Err(..) => Err(err),
-                                });
+
+                        let mut parts = ip.split(':');
+                        let ip = parts.next().unwrap();
+                        let port = parts
+                            .next()
+                            .map(|port| port.parse::<u16>().ok())
+                            .flatten()
+                            .unwrap_or(DEFAULT_PORT);
+
+                        let addr = match (ip, port).to_remote_addr() {
+                            Ok(address) => match address {
+                                RemoteAddr::Socket(address) => Ok(address),
+                                RemoteAddr::Str(..) => Err(std::io::Error::new(
+                                    std::io::ErrorKind::InvalidInput,
+                                    "The address was not able to be parsed.",
+                                )),
+                            },
+                            Err(err) => Err(err),
+                        };
 
                         match addr {
                             Ok(addr) => {
@@ -231,7 +240,7 @@ impl<
                                 );
                             }
                             Err(err) => {
-                                warn!("Could not parse ip address with error {}", err);
+                                warn!("Could not parse address with error {}", err);
                                 string.clear();
                             }
                         }
@@ -278,86 +287,91 @@ impl<
     }
 
     fn draw(&mut self, ctx: &mut GameContext<'d>) -> Result {
+        graphics::set_canvas(ctx, self.scaler.canvas());
         graphics::clear(ctx, Color::BLACK);
-        {
-            match &self.state {
-                States::Connect(ip) => {
+        match &self.state {
+            States::Connect(ip) => {
+                draw_text_left(
+                    &mut ctx.engine,
+                    &1,
+                    "Input Server Address",
+                    TextColor::White,
+                    5.0,
+                    5.0,
+                );
+                draw_text_left(&mut ctx.engine, &1, ip, TextColor::White, 5.0, 25.0);
+                draw_text_left(
+                    &mut ctx.engine,
+                    &1,
+                    "Controls: X, Z, Arrow Keys",
+                    TextColor::White,
+                    5.0,
+                    45.0,
+                );
+            }
+            States::Connected(connection, connected) => match connected {
+                ConnectState::WaitConfirm => draw_text_left(
+                    &mut ctx.engine,
+                    &1,
+                    "Connecting...",
+                    TextColor::White,
+                    5.0,
+                    5.0,
+                ),
+                ConnectState::ConnectedWait => {
                     draw_text_left(
                         &mut ctx.engine,
                         &1,
-                        "Input IP Address",
+                        "Connected!",
                         TextColor::White,
                         5.0,
                         5.0,
                     );
-                    draw_text_left(&mut ctx.engine, &1, ip, TextColor::White, 5.0, 25.0);
                     draw_text_left(
                         &mut ctx.engine,
                         &1,
-                        "Controls: X, Z, Arrow Keys",
-                        TextColor::White,
-                        5.0,
-                        45.0,
-                    );
-                }
-                States::Connected(connection, connected) => match connected {
-                    ConnectState::WaitConfirm => draw_text_left(
-                        &mut ctx.engine,
-                        &1,
-                        "Connecting...",
-                        TextColor::White,
-                        5.0,
-                        5.0,
-                    ),
-                    ConnectState::ConnectedWait => {
-                        draw_text_left(
-                            &mut ctx.engine,
-                            &1,
-                            "Connected!",
-                            TextColor::White,
-                            5.0,
-                            5.0,
-                        );
-                        draw_text_left(
-                            &mut ctx.engine,
-                            &1,
-                            "Waiting for opponent",
-                            TextColor::White,
-                            5.0,
-                            25.0,
-                        );
-                    }
-                    ConnectState::WrongVersion(..) => draw_text_left(
-                        &mut ctx.engine,
-                        &1,
-                        "Server version is incompatible!",
+                        "Waiting for opponent",
                         TextColor::White,
                         5.0,
                         25.0,
-                    ),
-                    ConnectState::ConnectedPlay => {
-                        graphics::set_canvas(ctx, self.scaler.canvas());
-                        graphics::clear(ctx, Color::BLACK);
-                        self.gui.draw(
-                            &mut ctx.engine,
-                            &ctx.dex,
-                            &connection.party,
-                            &connection.bag,
-                        );
-                        graphics::reset_transform_matrix(ctx);
-                        graphics::reset_canvas(ctx);
-                        self.scaler.draw(ctx);
-                    }
-                    ConnectState::Closed => draw_text_left(
+                    );
+                }
+                ConnectState::WrongVersion(..) => draw_text_left(
+                    &mut ctx.engine,
+                    &1,
+                    "Server version is incompatible!",
+                    TextColor::White,
+                    5.0,
+                    25.0,
+                ),
+                ConnectState::ConnectedPlay => {
+                    self.gui.draw(
                         &mut ctx.engine,
-                        &1,
-                        "Connection Closed",
-                        TextColor::White,
-                        5.0,
-                        5.0,
-                    ),
-                },
-            }
+                        &ctx.dex,
+                        &connection.party,
+                        &connection.bag,
+                    );
+                }
+                ConnectState::Closed => draw_text_left(
+                    &mut ctx.engine,
+                    &1,
+                    "Connection Closed",
+                    TextColor::White,
+                    5.0,
+                    5.0,
+                ),
+            },
+        }
+        // graphics::reset_transform_matrix(ctx);
+        graphics::reset_canvas(ctx);
+        graphics::clear(ctx, Color::BLACK);
+        self.scaler.draw(ctx);
+        Ok(())
+    }
+
+    fn event(&mut self, _: &mut GameContext<'d>, event: Event) -> Result {
+        if let Event::Resized { width, height } = event {
+            self.scaler.set_outer_size(width, height);
         }
         Ok(())
     }
