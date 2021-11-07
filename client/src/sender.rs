@@ -2,44 +2,48 @@ use log::{debug, info, warn};
 use serde::{de::DeserializeOwned, Serialize};
 use std::{fmt::Debug, hash::Hash, net::SocketAddr, sync::Arc};
 
+use message_io::network::{split, Endpoint, NetEvent, NetworkController, SendStatus, Transport};
+use parking_lot::Mutex;
+
 use common::{
     battle::{
         endpoint::{BattleEndpoint, MpscEndpoint},
         message::ServerMessage,
     },
     deserialize,
-    net::network::{split, Endpoint, NetEvent, NetworkController, SendStatus},
     pokedex::{
-        item::{bag::Bag, Item, SavedItemStack},
+        item::{bag::OwnedBag, Item, SavedItemStack},
+        moves::Move,
         pokemon::{
             owned::{OwnedPokemon, SavedPokemon},
             party::Party,
             stat::StatSet,
+            Pokemon,
         },
         Dex,
     },
     rand::Rng,
-    serialize,
-    sync::Mutex,
-    ConnectMessage, NetClientMessage, NetServerMessage, Player, Queue, VERSION,
+    serialize, ConnectMessage, NetClientMessage, NetServerMessage, Player, Queue, VERSION,
 };
 
-use gui::{BattlePlayerGui, pokedex::context::PokedexClientContext};
+use gui::{
+    pokedex::{BasicDex, Initializable},
+    BattlePlayerGui,
+};
 
 use crate::{ConnectState, GameContext};
 
-type MessageQueue<ID, const AS: usize> = Arc<Mutex<Queue<NetServerMessage<ID, AS>>>>;
+type MessageQueue<ID> = Arc<Mutex<Queue<NetServerMessage<ID>>>>;
 
 pub struct BattleConnection<
     'd,
     ID: Default + Clone + Eq + Hash + Debug + DeserializeOwned + Serialize + Send + 'static,
-    const AS: usize,
 > {
     controller: NetworkController,
     endpoint: Endpoint,
-    messages: MessageQueue<ID, AS>,
-    pub party: Party<OwnedPokemon<'d>>,
-    pub bag: Bag<'d>,
+    messages: MessageQueue<ID>,
+    pub party: Party<OwnedPokemon<&'d Pokemon, &'d Move, &'d Item>>,
+    pub bag: OwnedBag<&'d Item>,
     name: Option<String>,
     accumulator: f32,
 }
@@ -47,45 +51,46 @@ pub struct BattleConnection<
 impl<
         'd,
         ID: Default + Clone + Eq + Hash + Debug + DeserializeOwned + Serialize + Send + 'static,
-        const AS: usize,
-    > BattleConnection<'d, ID, AS>
+    > BattleConnection<'d, ID>
 {
-    pub fn connect(itemdex: &'d dyn Dex<Item>, address: SocketAddr, name: Option<String>) -> Self {
+    pub fn connect(itemdex: &'d BasicDex<Item>, address: SocketAddr, name: Option<String>) -> Self {
         let (controller, mut processor) = split();
 
         info!("Connecting to {}", address);
 
         let (server, ..) = controller
-            .connect(common::PROTOCOL, address)
+            .connect(Transport::FramedTcp, address)
             .unwrap_or_else(|err| panic!("Could not connect to {} with error {}", address, err));
 
-        let messages: MessageQueue<ID, AS> = Default::default();
+        let messages: MessageQueue<ID> = Default::default();
 
         let receiver = messages.clone();
 
         std::thread::spawn(move || loop {
-            processor.process_poll_event(None, |event| match event {
-                NetEvent::Connected(..) => (),
-                NetEvent::Accepted(endpoint, id) => {
-                    debug!("Accepted to endpoint: {} with resource id {}", endpoint, id)
-                }
-                NetEvent::Message(endpoint, bytes) => {
-                    if endpoint == server {
-                        match deserialize::<NetServerMessage<ID, AS>>(&bytes) {
-                            Ok(message) => {
-                                debug!("Received message: {:?}", message);
-                                receiver.lock().push(message);
-                            }
-                            Err(err) => {
-                                warn!("Could not receive server message with error {}", err)
-                            }
-                        }
-                    } else {
-                        warn!("Received packets from non server endpoint!")
+            processor.process_poll_event(Some(std::time::Duration::from_millis(1)), |event| {
+                match event {
+                    NetEvent::Connected(..) => (),
+                    NetEvent::Accepted(endpoint, id) => {
+                        debug!("Accepted to endpoint: {} with resource id {}", endpoint, id)
                     }
-                }
-                NetEvent::Disconnected(endpoint) => {
-                    info!("Disconnected from endpoint: {}", endpoint)
+                    NetEvent::Message(endpoint, bytes) => {
+                        if endpoint == server {
+                            match deserialize::<NetServerMessage<ID>>(&bytes) {
+                                Ok(message) => {
+                                    debug!("Received message: {:?}", message);
+                                    receiver.lock().push(message);
+                                }
+                                Err(err) => {
+                                    warn!("Could not receive server message with error {}", err)
+                                }
+                            }
+                        } else {
+                            warn!("Received packets from non server endpoint!")
+                        }
+                    }
+                    NetEvent::Disconnected(endpoint) => {
+                        info!("Disconnected from endpoint: {}", endpoint)
+                    }
                 }
             });
         });
@@ -96,7 +101,9 @@ impl<
             messages,
             name,
             party: Default::default(),
-            bag: Bag::init(itemdex, vec![SavedItemStack::new("hyper_potion".parse().unwrap(), 2)]),
+            bag: vec![SavedItemStack::new("hyper_potion".parse().unwrap(), 2)]
+                .init(itemdex)
+                .unwrap(),
             accumulator: 9.9,
         }
     }
@@ -105,12 +112,7 @@ impl<
         self.controller.remove(self.endpoint.resource_id());
     }
 
-    pub fn wait_confirm<R: Rng>(
-        &mut self,
-        random: &mut R,
-        ctx: &PokedexClientContext<'d>,
-        delta: f32,
-    ) -> Option<ConnectState> {
+    pub fn wait_confirm(&mut self, ctx: &'d mut GameContext, delta: f32) -> Option<ConnectState> {
         self.accumulator += delta;
         if self.accumulator >= 10.0 {
             self.controller.send(
@@ -126,12 +128,14 @@ impl<
                         ConnectMessage::CanJoin => {
                             info!("Server accepted connection!");
 
-                            let party = generate_party(random, ctx.pokedex.len() as _);
+                            let pokedex = unsafe { crate::POKEDEX.as_ref().unwrap() };
+
+                            let party = generate_party(&mut ctx.random, pokedex.len() as _);
 
                             let name = self.name.take().unwrap_or_else(|| {
                                 use common::rand::distributions::Alphanumeric;
                                 std::iter::repeat(())
-                                    .map(|()| random.sample(Alphanumeric))
+                                    .map(|()| ctx.random.sample(Alphanumeric))
                                     .map(char::from)
                                     .take(7)
                                     .collect()
@@ -146,7 +150,10 @@ impl<
                                     .party
                                     .into_iter()
                                     .map(|o| {
-                                        o.init(random, ctx.pokedex, ctx.movedex, ctx.itemdex)
+                                        let pokedex = unsafe { crate::POKEDEX.as_ref().unwrap() };
+                                        let movedex = unsafe { crate::MOVEDEX.as_ref().unwrap() };
+                                        let itemdex = unsafe { crate::ITEMDEX.as_ref().unwrap() };
+                                        o.init(&mut ctx.random, pokedex, movedex, itemdex)
                                             .unwrap_or_else(|| {
                                                 panic!("Could not initialize generated pokemon!")
                                             })
@@ -170,8 +177,8 @@ impl<
 
     pub fn gui_receive(
         &mut self,
-        gui: &mut BattlePlayerGui<'d, ID, AS>,
-        endpoint: &mut MpscEndpoint<ID, AS>,
+        gui: &mut BattlePlayerGui<ID, &'d Pokemon, &'d Move, &'d Item>,
+        endpoint: &mut MpscEndpoint<ID>,
         ctx: &mut GameContext,
         state: &mut ConnectState,
     ) {
@@ -185,14 +192,24 @@ impl<
                             *state = ConnectState::ConnectedPlay;
                             gui.start(true);
                         }
-                        // ServerMessage::End(..) => {
-                        //     *state = ConnectState::Closed;
-                        // }
+                        ServerMessage::PlayerEnd(..) | ServerMessage::GameEnd(..) => {
+                            *state = ConnectState::Closed;
+                        }
                         _ => (),
                     }
 
                     endpoint.send(message); // give gui the message
-                    gui.process(&mut ctx.random, &ctx.dex, &mut self.party); // process messages
+                    let pokedex = unsafe { crate::POKEDEX.as_ref().unwrap() };
+                    let movedex = unsafe { crate::MOVEDEX.as_ref().unwrap() };
+                    let itemdex = unsafe { crate::ITEMDEX.as_ref().unwrap() };
+                    gui.process(
+                        &mut ctx.random,
+                        &ctx.dex,
+                        pokedex,
+                        movedex,
+                        itemdex,
+                        &mut self.party,
+                    ); // process messages
                 }
                 NetServerMessage::Validate(message) => {
                     warn!("Received client validation message \"{:?}\"", message);
@@ -202,7 +219,7 @@ impl<
         }
     }
 
-    pub fn gui_send(&mut self, endpoint: &mut MpscEndpoint<ID, AS>) {
+    pub fn gui_send(&mut self, endpoint: &mut MpscEndpoint<ID>) {
         while let Ok(message) = BattleEndpoint::receive(endpoint) {
             self.send(&NetClientMessage::Game(message));
         }
@@ -219,7 +236,7 @@ impl<
         }
     }
 
-    pub fn recv(&mut self) -> Option<NetServerMessage<ID, AS>> {
+    pub fn recv(&mut self) -> Option<NetServerMessage<ID>> {
         self.messages.lock().pop()
     }
 }

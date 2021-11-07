@@ -1,23 +1,19 @@
 fn main() {
-
-    let dex_engine = firecore_pokedex_engine_builder::compile(
-        "../assets/pokedex/client/pokemon",
-        "../assets/pokedex/client/items",
-        "../assets/pokedex/client/trainers",
+    write(
+        &firecore_pokedex_engine_builder::compile(
+            "../assets/pokedex/client/pokemon",
+            "../assets/pokedex/client/items",
+            "../assets/pokedex/client/trainers",
+        ),
+        "dex-engine.bin",
     );
 
-    let data = bincode::serialize(&dex_engine)
-        .unwrap_or_else(|err| panic!("Could not serialize dex engine binary with error {}", err));
+    write(
+        &firecore_font_builder::compile("../assets/fonts"),
+        "fonts.bin",
+    );
 
-    let output = "dex-engine.bin";
-
-    std::fs::write(output, &data).unwrap_or_else(|err| {
-        panic!(
-            "Cannot create / write to dex file at {} with error {}",
-            output, err
-        )
-    });
-
-    firecore_font_builder::compile("../assets/fonts", "fonts.bin");
-    
+    fn write<D: serde::Serialize>(data: &D, file: impl AsRef<std::path::Path>) {
+        std::fs::write(file, bincode::serialize(data).unwrap()).unwrap()
+    }
 }

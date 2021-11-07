@@ -8,6 +8,7 @@ use serde::{de::DeserializeOwned, Serialize};
 use std::{
     fmt::Debug,
     hash::Hash,
+    net::SocketAddr,
     ops::{Deref, DerefMut},
     rc::Rc,
 };
@@ -15,27 +16,28 @@ use std::{
 use common::{
     battle::endpoint::MpscEndpoint,
     deserialize,
-    net::network::{RemoteAddr, ToRemoteAddr},
     pokedex::{item::Item, moves::Move, pokemon::Pokemon, BasicDex},
     rand::prelude::ThreadRng,
-    Id, AS, DEFAULT_PORT,
+    Id, DEFAULT_PORT,
 };
 
 use engine::{
-    graphics::draw_text_left,
-    tetra::{
-        graphics::{
-            self,
-            scaling::{ScalingMode, ScreenScaler},
-            Color,
-        },
-        input::{self, Key},
-        time, Context, ContextBuilder, Result, State,
+    graphics::{
+        self, draw_text_left,
+        scaling::{ScalingMode, ScreenScaler},
+        Color, DrawParams,
     },
+    input::{self, keyboard::Key},
+    text::FontSheet,
+    text::TextColor,
     util::{HEIGHT, WIDTH},
+    Context, ContextBuilder, State,
 };
 
-use gui::pokedex::{context::PokedexClientContext, engine::{EngineContext, tetra::Event, text::TextColor}, gui::{bag::BagGui, party::PartyGui}};
+use gui::pokedex::{
+    context::PokedexClientData,
+    gui::{bag::BagGui, party::PartyGui},
+};
 
 use gui::BattlePlayerGui;
 
@@ -48,7 +50,13 @@ mod sender;
 const SCALE: f32 = 3.0;
 const TITLE: &str = "Pokemon Battle";
 
-fn main() -> Result {
+static mut POKEDEX: Option<BasicDex<Pokemon>> = None;
+
+static mut MOVEDEX: Option<BasicDex<Move>> = None;
+
+static mut ITEMDEX: Option<BasicDex<Item>> = None;
+
+fn main() {
     let l = simple_logger::SimpleLogger::new();
 
     #[cfg(debug_assertions)]
@@ -60,14 +68,8 @@ fn main() -> Result {
     l.init()
         .unwrap_or_else(|err| panic!("Could not initialize logger with error {}", err));
 
-    let mut engine = engine::build(
-        ContextBuilder::new(TITLE, (WIDTH * SCALE) as _, (HEIGHT * SCALE) as _)
-            .vsync(true)
-            .resizable(true)
-            .show_mouse(true),
-        deserialize(include_bytes!("../fonts.bin"))
-            .unwrap_or_else(|err| panic!("Could not read fonts with error {}", err)),
-    )?;
+    let fonts: Vec<FontSheet<Vec<u8>>> = deserialize(include_bytes!("../fonts.bin"))
+        .unwrap_or_else(|err| panic!("Could not read fonts with error {}", err));
 
     let (pokedex, movedex, itemdex) =
         deserialize::<(BasicDex<Pokemon>, BasicDex<Move>, BasicDex<Item>)>(include_bytes!(
@@ -75,55 +77,73 @@ fn main() -> Result {
         ))
         .unwrap_or_else(|err| panic!("Could not read pokedex with error {}", err));
 
-    let serengine: gui::pokedex::serialize::SerializedPokedexEngine =
-        deserialize(include_bytes!("../dex-engine.bin"))
-            .unwrap_or_else(|err| panic!("Could not read pokedex engine data with error {}", err));
+    unsafe {
+        POKEDEX = Some(pokedex);
+        MOVEDEX = Some(movedex);
+        ITEMDEX = Some(itemdex);
+    }
 
-    let dex = PokedexClientContext::new(&mut engine, &pokedex, &movedex, &itemdex, serengine)?;
+    let serengine = deserialize(include_bytes!("../dex-engine.bin"))
+        .unwrap_or_else(|err| panic!("Could not read pokedex engine data with error {}", err));
 
-    let mut ctx = GameContext {
-        engine,
-        dex,
-        random: common::rand::thread_rng(),
-    };
+    engine::run(
+        ContextBuilder::new(TITLE, (WIDTH * SCALE) as _, (HEIGHT * SCALE) as _), // .vsync(true).resizable(true).show_mouse(true)
+        move |mut ctx| async {
+            for font in fonts {
+                engine::text::insert_font(&mut ctx, &font).unwrap();
+            }
 
-    engine::run(&mut ctx, GameState::<Id, AS>::new)
+            let dex = PokedexClientData::new(&mut ctx, serengine)
+                .await
+                .unwrap_or_else(|err| {
+                    panic!(
+                        "Could not initialize pokedex client engine with error {}",
+                        err
+                    )
+                });
+
+            GameContext {
+                engine: ctx,
+                dex,
+                random: common::rand::thread_rng(),
+            }
+        },
+        GameState::<Id>::new,
+    );
 }
 
-pub struct GameContext<'d> {
-    pub engine: EngineContext,
-    pub dex: PokedexClientContext<'d>,
+pub struct GameContext {
+    pub engine: Context,
+    pub dex: PokedexClientData,
     pub random: ThreadRng,
 }
 
-impl<'d> Deref for GameContext<'d> {
+impl Deref for GameContext {
     type Target = Context;
 
     fn deref(&self) -> &Self::Target {
-        &self.engine.tetra
+        &self.engine
     }
 }
 
-impl<'d> DerefMut for GameContext<'d> {
+impl DerefMut for GameContext {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.engine.tetra
+        &mut self.engine
     }
 }
 
 pub enum States<
     'd,
     ID: Default + Clone + Debug + Eq + Hash + Serialize + DeserializeOwned + Send + 'static,
-    const AS: usize,
 > {
     Connect(String),
-    Connected(BattleConnection<'d, ID, AS>, ConnectState),
+    Connected(BattleConnection<'d, ID>, ConnectState),
 }
 
 impl<
         'd,
         ID: Default + Clone + Debug + Eq + Hash + Serialize + DeserializeOwned + Send + 'static,
-        const AS: usize,
-    > States<'d, ID, AS>
+    > States<'d, ID>
 {
     pub const CONNECT: Self = Self::Connect(String::new());
 }
@@ -140,99 +160,73 @@ pub enum ConnectState {
 struct GameState<
     'd,
     ID: Default + Clone + Debug + Eq + Hash + Serialize + DeserializeOwned + Send + 'static,
-    const AS: usize,
 > {
-    state: States<'d, ID, AS>,
-    gui: BattlePlayerGui<'d, ID, AS>,
-    gui_endpoint: MpscEndpoint<ID, AS>,
-    scaler: ScreenScaler,
+    state: States<'d, ID>,
+    gui: BattlePlayerGui<ID, &'d Pokemon, &'d Move, &'d Item>,
+    gui_endpoint: MpscEndpoint<ID>,
 }
 
 impl<
         'd,
         ID: Default + Clone + Debug + Eq + Hash + Serialize + DeserializeOwned + Send + 'static,
-        const AS: usize,
-    > GameState<'d, ID, AS>
+    > GameState<'d, ID>
 {
-    pub fn new(ctx: &mut GameContext<'d>) -> Result<Self> {
+    pub fn new(ctx: &mut GameContext) -> Self {
         let party = Rc::new(PartyGui::new(&ctx.dex));
         let bag = Rc::new(BagGui::new(&ctx.dex));
 
-        let mut gui = BattlePlayerGui::new(&mut ctx.engine.tetra, &ctx.dex, party, bag);
+        let mut gui = BattlePlayerGui::new(&mut ctx.engine, party, bag);
 
         let t = "rival".parse().ok();
 
         for remote in gui.remotes.values_mut() {
-            remote.trainer = t;
+            remote.npc_group = t;
         }
 
-        let scaler = ScreenScaler::with_window_size(
-            ctx,
-            WIDTH as _,
-            HEIGHT as _,
-            ScalingMode::ShowAllPixelPerfect,
-        )?;
+        let scaler = ScreenScaler::with_size(ctx, WIDTH as _, HEIGHT as _, ScalingMode::Stretch);
 
-        let gui_endpoint = gui.endpoint();
+        graphics::scaling::set_scaler(ctx, scaler);
 
-        Ok(Self {
+        let gui_endpoint = gui.endpoint().clone();
+
+        Self {
             state: States::Connect(String::new()),
             gui,
             gui_endpoint,
-            scaler,
-        })
+        }
     }
 }
 
 impl<
         'd,
         ID: Default + Clone + Debug + Eq + Hash + Serialize + DeserializeOwned + Send + 'static,
-        const AS: usize,
-    > State<GameContext<'d>> for GameState<'d, ID, AS>
+    > State<GameContext> for GameState<'d, ID>
 {
-    fn end(&mut self, _ctx: &mut GameContext<'d>) -> Result {
+    fn end(&mut self, _ctx: &mut GameContext) {
         match &mut self.state {
             States::Connect(..) => (),
-            States::Connected(connection, ..) => connection.end(),
+            States::Connected(connection, ..) => {
+                self.gui.forfeit();
+                connection.end();
+            }
         }
-        Ok(())
     }
 
-    fn update(&mut self, ctx: &mut GameContext<'d>) -> Result {
+    fn update(&mut self, ctx: &mut GameContext, delta: f32) {
         match &mut self.state {
             States::Connect(string) => {
-                if input::is_key_pressed(ctx, Key::Backspace) {
+                if input::keyboard::is_key_pressed(ctx, Key::Backspace) {
                     string.pop();
                 }
-                if input::is_key_pressed(ctx, Key::Enter) {
+                if input::keyboard::is_key_pressed(ctx, Key::Enter) {
                     let mut strings = string.split_ascii_whitespace();
-                    if let Some(ip) = strings.next() {
-
-                        let mut parts = ip.split(':');
-                        let ip = parts.next().unwrap();
-                        let port = parts
-                            .next()
-                            .map(|port| port.parse::<u16>().ok())
-                            .flatten()
-                            .unwrap_or(DEFAULT_PORT);
-
-                        let addr = match (ip, port).to_remote_addr() {
-                            Ok(address) => match address {
-                                RemoteAddr::Socket(address) => Ok(address),
-                                RemoteAddr::Str(..) => Err(std::io::Error::new(
-                                    std::io::ErrorKind::InvalidInput,
-                                    "The address was not able to be parsed.",
-                                )),
-                            },
-                            Err(err) => Err(err),
-                        };
-
-                        match addr {
+                    match strings.next() {
+                        Some(addr) => match find_address(parse_address(addr)) {
                             Ok(addr) => {
                                 info!("Connecting to server at {}", addr);
                                 self.state = States::Connected(
                                     BattleConnection::connect(
-                                        ctx.dex.itemdex,
+                                        unsafe { ITEMDEX.as_ref().unwrap() },
                                         addr,
                                         strings.next().map(ToOwned::to_owned),
                                     ),
@@ -243,70 +237,96 @@ impl<
                                 warn!("Could not parse address with error {}", err);
                                 string.clear();
                             }
-                        }
-                    } else {
-                        warn!("No text was input for IP.");
+                        },
+                        None => warn!("No text was input for server address."),
                     }
-                } else if let Some(new) = input::get_text_input(ctx) {
-                    string.push_str(new);
+                // } else if let Some(new) = input::get_text_input(ctx) {
+                //     string.push_str(new);
+                // }
+                } else {
+                    while let Some(c) = input::keyboard::get_char_pressed() {
+                        string.push(c);
+                    }
                 }
             }
             States::Connected(connection, state) => match state {
                 ConnectState::WaitConfirm => {
-                    if let Some(connected) = connection.wait_confirm(
-                        &mut ctx.random,
-                        &ctx.dex,
-                        time::get_delta_time(&ctx.engine.tetra).as_secs_f32(),
-                    ) {
+                    if let Some(connected) =
+                        connection.wait_confirm(unsafe { &mut *(ctx as *mut _) }, delta)
+                    {
                         *state = connected;
                     }
                 }
                 ConnectState::Closed => self.state = States::Connect(String::new()),
-                ConnectState::ConnectedWait => {
-                    connection.gui_receive(&mut self.gui, &mut self.gui_endpoint, ctx, state)
-                }
+                ConnectState::ConnectedWait => connection.gui_receive(
+                    &mut self.gui,
+                    &mut self.gui_endpoint,
+                    unsafe { &mut *(ctx as *mut _) },
+                    state,
+                ),
                 ConnectState::WrongVersion(remaining) => {
-                    *remaining -= time::get_delta_time(ctx).as_secs_f32();
+                    *remaining -= delta;
                     if remaining < &mut 0.0 {
                         self.state = States::Connect(String::new());
                     }
                 }
                 ConnectState::ConnectedPlay => {
                     connection.gui_receive(&mut self.gui, &mut self.gui_endpoint, ctx, state);
+                    let pokedex = unsafe { crate::POKEDEX.as_ref().unwrap() };
+                    let movedex = unsafe { crate::MOVEDEX.as_ref().unwrap() };
+                    let itemdex = unsafe { crate::ITEMDEX.as_ref().unwrap() };
                     self.gui.update(
                         &ctx.engine,
                         &ctx.dex,
-                        time::get_delta_time(ctx).as_secs_f32(),
+                        pokedex,
+                        movedex,
+                        itemdex,
+                        delta,
                         &mut connection.bag,
                     );
                     connection.gui_send(&mut self.gui_endpoint);
                 }
             },
         }
-        Ok(())
     }
 
-    fn draw(&mut self, ctx: &mut GameContext<'d>) -> Result {
-        graphics::set_canvas(ctx, self.scaler.canvas());
+    fn draw(&mut self, ctx: &mut GameContext) {
+        // graphics::set_canvas(ctx, self.scaler.canvas());
         graphics::clear(ctx, Color::BLACK);
         match &self.state {
             States::Connect(ip) => {
+                let params = DrawParams::color(TextColor::White.into());
                 draw_text_left(
                     &mut ctx.engine,
                     &1,
                     "Input Server Address",
-                    TextColor::White,
                     5.0,
                     5.0,
+                    params,
                 );
-                draw_text_left(&mut ctx.engine, &1, ip, TextColor::White, 5.0, 25.0);
                 draw_text_left(
                     &mut ctx.engine,
                     &1,
-                    "Controls: X, Z, Arrow Keys",
-                    TextColor::White,
+                    ip,
+                    5.0,
+                    25.0,
+                    params,
+                );
+                draw_text_left(
+                    &mut ctx.engine,
+                    &1,
+                    "Controls: X is (A), Z is (B)",
                     5.0,
                     45.0,
+                    params,
+                );
+                draw_text_left(
+                    &mut ctx.engine,
+                    &1,
+                    "Arrow Keys are D-Pad",
+                    5.0,
+                    65.0,
+                    params,
                 );
             }
             States::Connected(connection, connected) => match connected {
@@ -314,35 +334,35 @@ impl<
                     &mut ctx.engine,
                     &1,
                     "Connecting...",
-                    TextColor::White,
                     5.0,
                     5.0,
+                    DrawParams::color(TextColor::White.into()),
                 ),
                 ConnectState::ConnectedWait => {
                     draw_text_left(
                         &mut ctx.engine,
                         &1,
                         "Connected!",
-                        TextColor::White,
                         5.0,
                         5.0,
+                        DrawParams::color(TextColor::White.into()),
                     );
                     draw_text_left(
                         &mut ctx.engine,
                         &1,
                         "Waiting for opponent",
-                        TextColor::White,
                         5.0,
                         25.0,
+                        DrawParams::color(TextColor::White.into()),
                     );
                 }
                 ConnectState::WrongVersion(..) => draw_text_left(
                     &mut ctx.engine,
                     &1,
                     "Server version is incompatible!",
-                    TextColor::White,
                     5.0,
                     25.0,
+                    DrawParams::color(TextColor::White.into()),
                 ),
                 ConnectState::ConnectedPlay => {
                     self.gui.draw(
@@ -356,23 +376,47 @@ impl<
                     &mut ctx.engine,
                     &1,
                     "Connection Closed",
-                    TextColor::White,
                     5.0,
                     5.0,
+                    DrawParams::color(TextColor::White.into()),
                 ),
             },
         }
-        // graphics::reset_transform_matrix(ctx);
-        graphics::reset_canvas(ctx);
-        graphics::clear(ctx, Color::BLACK);
-        self.scaler.draw(ctx);
-        Ok(())
+        // graphics::reset_canvas(ctx);
+        // graphics::clear(ctx, Color::BLACK);
+        // self.scaler.draw(ctx);
+        // Ok(())
     }
 
-    fn event(&mut self, _: &mut GameContext<'d>, event: Event) -> Result {
-        if let Event::Resized { width, height } = event {
-            self.scaler.set_outer_size(width, height);
-        }
-        Ok(())
+    // fn event(&mut self, _: &mut GameContext<'d>, event: Event) -> Result {
+    //     if let Event::Resized { width, height } = event {
+    //         self.scaler.set_outer_size(width, height);
+    //     }
+    //     Ok(())
+    // }
+}
+
+fn parse_address(addr: &str) -> (&str, u16) {
+    let mut parts = addr.split(':');
+    let addr = parts.next().unwrap();
+    let port = parts
+        .next()
+        .map(|port| port.parse::<u16>().ok())
+        .flatten()
+        .unwrap_or(DEFAULT_PORT);
+    (addr, port)
+}
+
+fn find_address(addr: (&str, u16)) -> Result<SocketAddr, std::io::Error> {
+    use message_io::network::{RemoteAddr, ToRemoteAddr};
+    match addr.to_remote_addr() {
+        Ok(address) => match address {
+            RemoteAddr::Socket(address) => Ok(address),
+            RemoteAddr::Str(..) => Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "The address was not able to be parsed.",
+            )),
+        },
+        Err(err) => Err(err),
     }
 }

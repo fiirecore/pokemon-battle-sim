@@ -3,25 +3,21 @@ pub extern crate firecore_battle as battle;
 pub use battle::pokedex;
 pub use bincode::{deserialize, serialize, Error as SerdeError};
 pub extern crate bincode;
-pub extern crate message_io as net;
-pub extern crate parking_lot as sync;
 pub extern crate rand;
 
 use battle::{
     message::{ClientMessage, ServerMessage},
     pokedex::pokemon::{owned::SavedPokemon, party::Party},
 };
-use net::network::Transport;
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 pub type Id = u8;
-pub const AS: usize = 2;
 
 pub const DEFAULT_PORT: u16 = 28528;
-pub const PROTOCOL: Transport = Transport::FramedTcp;
+// pub const PROTOCOL: Transport = Transport::FramedTcp;
 
 #[derive(Debug, Deserialize, Serialize)]
 pub enum NetClientMessage<ID> {
@@ -34,9 +30,9 @@ pub enum NetClientMessage<ID> {
 }
 
 #[derive(Debug, Deserialize, Serialize)]
-pub enum NetServerMessage<ID, const AS: usize> {
+pub enum NetServerMessage<ID> {
     Validate(ConnectMessage),
-    Game(ServerMessage<ID, AS>),
+    Game(ServerMessage<ID>),
 }
 
 #[derive(Debug, Deserialize, Serialize)]

@@ -1,6 +1,6 @@
 [package]
 name = "pokemon-battle-server"
-version = "0.5.0"
+version = "0.6.0"
 authors = ["Rhys H <donotdoughnut99@gmail.com>"]
 edition = "2018"
 build = "build.rs"
@@ -14,7 +14,7 @@ simple_logger = "1"
 dashmap = "4.0"
 log = "0.4"
 hashbrown = "0.11"
-# crossbeam-channel = "0.5"
+message-io = { version = "0.14", features = ["tcp"], default-features = false }
 
 [build-dependencies]
 firecore-battle-builder = { git = "https://github.com/DoNotDoughnut/firecore-battle-builder", rev = "57708e0" }

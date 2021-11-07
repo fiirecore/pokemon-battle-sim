@@ -1,15 +1,15 @@
 use std::{fmt::Debug, sync::Arc};
 
+use message_io::network::{Endpoint, NetworkController};
+
 use common::{
     battle::{
         endpoint::{BattleEndpoint, ReceiveError},
         message::{ClientMessage, ServerMessage},
     },
-    net::network::{Endpoint, NetworkController},
     NetServerMessage,
 };
 
-use log::debug;
 use serde::Serialize;
 
 use crate::{send, Receiver};
@@ -36,9 +36,8 @@ impl<ID: Serialize + Debug> BattleServerPlayer<ID> {
     }
 }
 
-impl<ID: Serialize + Debug, const AS: usize> BattleEndpoint<ID, AS> for BattleServerPlayer<ID> {
-    fn send(&mut self, message: ServerMessage<ID, AS>) {
-        debug!("Endpoint {} is getting sent {:?}", self.endpoint, message);
+impl<ID: Serialize + Debug> BattleEndpoint<ID> for BattleServerPlayer<ID> {
+    fn send(&mut self, message: ServerMessage<ID>) {
         send(
             &self.controller,
             self.endpoint,

@@ -17,13 +17,14 @@ use log::{debug, error, info, warn, LevelFilter};
 
 use hashbrown::HashMap;
 
+use message_io::network::{Endpoint, NetEvent, NetworkController, SendStatus, Transport, split};
+
 use common::{
     battle::{
         engine::default::moves::MoveExecution,
         prelude::{Battle, BattleData, BattleType, ClientMessage, DefaultMoveEngine, PlayerData},
     },
     deserialize,
-    net::network::{split, Endpoint, NetEvent, NetworkController, SendStatus},
     pokedex::{
         item::Item,
         moves::{Move, MoveId},
@@ -31,7 +32,7 @@ use common::{
         BasicDex,
     },
     rand::prelude::ThreadRng,
-    serialize as serialize2, ConnectMessage, Id, NetClientMessage, NetServerMessage, Queue, AS,
+    serialize as serialize2, ConnectMessage, Id, NetClientMessage, NetServerMessage, Queue,
     VERSION,
 };
 
@@ -86,7 +87,7 @@ fn main() {
     let (controller, mut processor) = split();
 
     controller
-        .listen(common::PROTOCOL, address)
+        .listen(Transport::FramedTcp, address)
         .unwrap_or_else(|err| {
             panic!(
                 "Could not listen on network address {} with error {}",
@@ -132,7 +133,7 @@ fn main() {
                                 send(
                                     &controller,
                                     endpoint,
-                                    &serialize(&NetServerMessage::<Id, AS>::Validate(
+                                    &serialize(&NetServerMessage::<Id>::Validate(
                                         match version == VERSION {
                                             true => ConnectMessage::CanJoin,
                                             false => ConnectMessage::WrongVersion,
@@ -151,7 +152,7 @@ fn main() {
                                 None => send(
                                     &controller,
                                     endpoint,
-                                    &serialize(&NetServerMessage::<Id, AS>::Validate(
+                                    &serialize(&NetServerMessage::<Id>::Validate(
                                         ConnectMessage::AlreadyConnected,
                                     )),
                                 ),
@@ -184,7 +185,7 @@ fn main() {
         .into_iter()
         .enumerate()
         .flat_map(|(index, (endpoint, player))| match player {
-            Some(player) => Some(PlayerData::<Id, AS> {
+            Some(player) => Some(PlayerData {
                 id: index as u8,
                 name: Some(player.name),
                 party: player.party,
@@ -195,7 +196,7 @@ fn main() {
                 send(
                     &controller,
                     endpoint,
-                    &serialize(&NetServerMessage::<Id, AS>::Validate(
+                    &serialize(&NetServerMessage::<Id>::Validate(
                         ConnectMessage::ConnectionReplaced,
                     )),
                 );
@@ -208,6 +209,7 @@ fn main() {
             type_: BattleType::Trainer,
         },
         &mut random,
+        configuration.battle_size as _,
         &pokedex,
         &movedex,
         &itemdex,
@@ -251,7 +253,7 @@ fn main() {
                         NetClientMessage::RequestJoin(..) | NetClientMessage::Join(..) => send(
                             &controller,
                             endpoint,
-                            &serialize(&NetServerMessage::<Id, AS>::Validate(
+                            &serialize(&NetServerMessage::<Id>::Validate(
                                 ConnectMessage::InProgress,
                             )),
                         ),
@@ -271,7 +273,7 @@ fn main() {
         if !running.load(Ordering::Relaxed) {
             battle.end(None);
         }
-        battle.update(&mut random, &mut engine, &itemdex);
+        battle.update(&mut random, &mut engine, &movedex, &itemdex);
         thread::sleep(Duration::from_millis(5)); // To - do: only process when messages are received, stay idle and dont loop when not received
     }
 
@@ -286,7 +288,7 @@ fn main() {
 
 fn send(controller: &NetworkController, endpoint: Endpoint, data: &[u8]) {
     match controller.send(endpoint, data) {
-        SendStatus::Sent => debug!("Sent message!"),
+        SendStatus::Sent => (),
         status => error!("Could not send message with error {:?}", status),
     }
 }
