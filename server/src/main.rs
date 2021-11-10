@@ -1,6 +1,5 @@
 extern crate firecore_battle_net as common;
 
-use dashmap::{mapref::one::RefMut, DashMap};
 use simple_logger::SimpleLogger;
 
 use std::{
@@ -22,7 +21,7 @@ use message_io::network::{Endpoint, NetEvent, NetworkController, SendStatus, Tra
 use common::{
     battle::{
         engine::default::moves::MoveExecution,
-        prelude::{Battle, BattleData, BattleType, ClientMessage, DefaultMoveEngine, PlayerData},
+        prelude::{Battle, BattleData, BattleType, DefaultMoveEngine, PlayerData},
     },
     deserialize,
     pokedex::{
@@ -32,14 +31,11 @@ use common::{
         BasicDex,
     },
     rand::prelude::ThreadRng,
-    serialize as serialize2, ConnectMessage, Id, NetClientMessage, NetServerMessage, Queue,
+    serialize as serialize2, ConnectMessage, Id, NetClientMessage, NetServerMessage,
     VERSION,
 };
 
 use crate::{configuration::Configuration, player::BattleServerPlayer};
-
-type RandomState = hashbrown::hash_map::DefaultHashBuilder;
-type Receiver<ID> = DashMap<Endpoint, Queue<ClientMessage<ID>>, RandomState>;
 
 mod configuration;
 mod player;
@@ -177,7 +173,7 @@ fn main() {
 
     info!("Starting battle.");
 
-    let receiver = Arc::new(DashMap::with_hasher(RandomState::new()));
+    let mut receiver = HashMap::with_capacity(players.len());
 
     let controller = Arc::new(controller);
 
@@ -185,13 +181,17 @@ fn main() {
         .into_iter()
         .enumerate()
         .flat_map(|(index, (endpoint, player))| match player {
-            Some(player) => Some(PlayerData {
+            Some(player) => {
+                let (cs, cr) = crossbeam_channel::unbounded();
+                receiver.insert(endpoint, cs);
+                Some(PlayerData {
                 id: index as u8,
                 name: Some(player.name),
                 party: player.party,
                 settings: Default::default(),
-                endpoint: BattleServerPlayer::new(endpoint, &controller, &receiver),
-            }),
+                endpoint: BattleServerPlayer::new(endpoint, &controller, cr),
+            })
+        },
             None => {
                 send(
                     &controller,
@@ -248,7 +248,13 @@ fn main() {
                 match deserialize::<NetClientMessage<Id>>(bytes) {
                     Ok(message) => match message {
                         NetClientMessage::Game(message) => {
-                            get_endpoint(&receiver_handle, &endpoint).push(message)
+                            match receiver_handle.get(&endpoint) {
+                                Some(channel) => if let Err(err) = channel.try_send(message) {
+                                    log::error!("Could not send over channel with error {}", err);
+                                }
+                                None => log::error!("Could not find endpoint at {}", endpoint),
+                            }
+                            // get_endpoint(&receiver_handle, &endpoint).push(message)
                         }
                         NetClientMessage::RequestJoin(..) | NetClientMessage::Join(..) => send(
                             &controller,
@@ -293,14 +299,14 @@ fn send(controller: &NetworkController, endpoint: Endpoint, data: &[u8]) {
     }
 }
 
-fn get_endpoint<'a, ID>(
-    receiver: &'a Receiver<ID>,
-    endpoint: &Endpoint,
-) -> RefMut<'a, Endpoint, Queue<ClientMessage<ID>>, RandomState> {
-    receiver
-        .get_mut(&endpoint)
-        .unwrap_or_else(|| panic!("Could not get message queue for endpoint {}", endpoint))
-}
+// fn get_endpoint<'a, ID>(
+//     receiver: &'a Receiver<ID>,
+//     endpoint: &Endpoint,
+// ) -> RefMut<'a, Endpoint, Queue<ClientMessage<ID>>, RandomState> {
+//     receiver
+//         .get_mut(&endpoint)
+//         .unwrap_or_else(|| panic!("Could not get message queue for endpoint {}", endpoint))
+// }
 
 fn serialize(s: &impl serde::Serialize) -> Vec<u8> {
     serialize2(s).unwrap()

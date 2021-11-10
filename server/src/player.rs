@@ -12,26 +12,27 @@ use common::{
 
 use serde::Serialize;
 
-use crate::{send, Receiver};
+use crate::send;
+
+use crossbeam_channel::{Receiver, TryRecvError};
 
 pub struct BattleServerPlayer<ID: Serialize + Debug> {
     endpoint: Endpoint,
     controller: Arc<NetworkController>,
-    receiver: Arc<Receiver<ID>>,
+    receiver: Receiver<ClientMessage<ID>>,
 }
 
 impl<ID: Serialize + Debug> BattleServerPlayer<ID> {
     pub fn new(
         endpoint: Endpoint,
         controller: &Arc<NetworkController>,
-        receiver: &Arc<Receiver<ID>>,
+        receiver: Receiver<ClientMessage<ID>>,
     ) -> Box<Self> {
-        receiver.insert(endpoint, Default::default());
 
         Box::new(Self {
             endpoint,
             controller: controller.clone(),
-            receiver: receiver.clone(),
+            receiver,
         })
     }
 }
@@ -46,8 +47,9 @@ impl<ID: Serialize + Debug> BattleEndpoint<ID> for BattleServerPlayer<ID> {
     }
 
     fn receive(&mut self) -> Result<ClientMessage<ID>, Option<ReceiveError>> {
-        crate::get_endpoint(&self.receiver, &self.endpoint)
-            .pop()
-            .ok_or(None)
+        self.receiver.try_recv().map_err(|err| match err {
+            TryRecvError::Empty => None,
+            TryRecvError::Disconnected => Some(ReceiveError::Disconnected),
+        })
     }
 }

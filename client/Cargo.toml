@@ -13,7 +13,7 @@ audio = ["firecore-battle-gui/audio"]
 
 firecore-battle-net = { path = "..", features = ["build"] }
 
-firecore-battle-gui = { git = "https://github.com/fiirecore/engine", rev = "11e4e14", package = "firecore-battle-gui", default-features = false }
+firecore-battle-gui = { git = "https://github.com/fiirecore/engine", rev = "e32f723", package = "firecore-battle-gui", default-features = false }
 # firecore-battle-gui = { path = "../../firecore/engine/crates/battle-gui", default-features = false } 
 
 log = "0.4"
@@ -22,7 +22,7 @@ serde = "1"
 
 # quad-net = { version =  "0.1", default-features = false }
 message-io = { version = "0.14", features = ["tcp"], default-features = false }
-parking_lot = "0.11"
+crossbeam-channel = "0.5"
 
 
 [build-dependencies]

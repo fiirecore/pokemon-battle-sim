@@ -10,7 +10,6 @@ use battle::{
     pokedex::pokemon::{owned::SavedPokemon, party::Party},
 };
 use serde::{Deserialize, Serialize};
-use std::collections::VecDeque;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -50,27 +49,4 @@ pub enum ConnectMessage {
 pub struct Player {
     pub name: String,
     pub party: Party<SavedPokemon>,
-}
-
-#[derive(Debug)]
-pub struct Queue<M> {
-    inner: VecDeque<M>,
-}
-
-impl<M> Default for Queue<M> {
-    fn default() -> Self {
-        Self {
-            inner: Default::default(),
-        }
-    }
-}
-
-impl<M> Queue<M> {
-    pub fn push(&mut self, message: M) {
-        self.inner.push_front(message)
-    }
-
-    pub fn pop(&mut self) -> Option<M> {
-        self.inner.pop_back()
-    }
 }

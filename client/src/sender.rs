@@ -1,9 +1,9 @@
+use crossbeam_channel::Receiver;
 use log::{debug, info, warn};
 use serde::{de::DeserializeOwned, Serialize};
-use std::{fmt::Debug, hash::Hash, net::SocketAddr, sync::Arc};
+use std::{fmt::Debug, hash::Hash, net::SocketAddr};
 
 use message_io::network::{split, Endpoint, NetEvent, NetworkController, SendStatus, Transport};
-use parking_lot::Mutex;
 
 use common::{
     battle::{
@@ -23,7 +23,7 @@ use common::{
         Dex,
     },
     rand::Rng,
-    serialize, ConnectMessage, NetClientMessage, NetServerMessage, Player, Queue, VERSION,
+    serialize, ConnectMessage, NetClientMessage, NetServerMessage, Player, VERSION,
 };
 
 use gui::{
@@ -33,15 +33,13 @@ use gui::{
 
 use crate::{ConnectState, GameContext};
 
-type MessageQueue<ID> = Arc<Mutex<Queue<NetServerMessage<ID>>>>;
-
 pub struct BattleConnection<
     'd,
     ID: Default + Clone + Eq + Hash + Debug + DeserializeOwned + Serialize + Send + 'static,
 > {
     controller: NetworkController,
     endpoint: Endpoint,
-    messages: MessageQueue<ID>,
+    receiver: Receiver<NetServerMessage<ID>>,
     pub party: Party<OwnedPokemon<&'d Pokemon, &'d Move, &'d Item>>,
     pub bag: OwnedBag<&'d Item>,
     name: Option<String>,
@@ -62,9 +60,7 @@ impl<
             .connect(Transport::FramedTcp, address)
             .unwrap_or_else(|err| panic!("Could not connect to {} with error {}", address, err));
 
-        let messages: MessageQueue<ID> = Default::default();
-
-        let receiver = messages.clone();
+        let (sender, receiver) = crossbeam_channel::unbounded();
 
         std::thread::spawn(move || loop {
             processor.process_poll_event(Some(std::time::Duration::from_millis(1)), |event| {
@@ -78,7 +74,9 @@ impl<
                             match deserialize::<NetServerMessage<ID>>(&bytes) {
                                 Ok(message) => {
                                     debug!("Received message: {:?}", message);
-                                    receiver.lock().push(message);
+                                    if let Err(err) = sender.try_send(message) {
+                                        log::error!("Cannot send message through MPSC channel with error {}", err);
+                                    }
                                 }
                                 Err(err) => {
                                     warn!("Could not receive server message with error {}", err)
@@ -98,7 +96,7 @@ impl<
         Self {
             controller,
             endpoint: server,
-            messages,
+            receiver,
             name,
             party: Default::default(),
             bag: vec![SavedItemStack::new("hyper_potion".parse().unwrap(), 2)]
@@ -190,6 +188,10 @@ impl<
                     match &message {
                         ServerMessage::Begin(..) => {
                             *state = ConnectState::ConnectedPlay;
+                            let npc = "rival".parse().unwrap();
+                            for r in gui.remotes.values_mut() {
+                                r.npc_group = Some(npc);
+                            }
                             gui.start(true);
                         }
                         ServerMessage::PlayerEnd(..) | ServerMessage::GameEnd(..) => {
@@ -205,6 +207,7 @@ impl<
                     gui.process(
                         &mut ctx.random,
                         &ctx.dex,
+                        &ctx.btl,
                         pokedex,
                         movedex,
                         itemdex,
@@ -237,7 +240,7 @@ impl<
     }
 
     pub fn recv(&mut self) -> Option<NetServerMessage<ID>> {
-        self.messages.lock().pop()
+        self.receiver.try_recv().ok()
     }
 }
 

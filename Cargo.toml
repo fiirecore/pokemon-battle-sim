@@ -16,6 +16,7 @@ build = ["firecore-pokedex-builder", "winres"]
 lto = true
 panic = "abort"
 codegen-units = 1
+opt-level = "z"
 
 [dependencies]
 firecore-battle = { git = "https://github.com/fiirecore/battle", rev = "0e98c89", default-features = false }

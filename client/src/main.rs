@@ -34,9 +34,12 @@ use engine::{
     Context, ContextBuilder, State,
 };
 
-use gui::pokedex::{
-    context::PokedexClientData,
-    gui::{bag::BagGui, party::PartyGui},
+use gui::{
+    context::BattleGuiContext,
+    pokedex::{
+        context::PokedexClientData,
+        gui::{bag::BagGui, party::PartyGui},
+    },
 };
 
 use gui::BattlePlayerGui;
@@ -102,8 +105,13 @@ fn main() {
                     )
                 });
 
+            let btl = BattleGuiContext::new(&mut ctx).unwrap_or_else(|err| {
+                panic!("Cannot initialize battle gui context with error {}", err)
+            });
+
             GameContext {
                 engine: ctx,
+                btl,
                 dex,
                 random: common::rand::thread_rng(),
             }
@@ -114,6 +122,7 @@ fn main() {
 
 pub struct GameContext {
     pub engine: Context,
+    pub btl: BattleGuiContext,
     pub dex: PokedexClientData,
     pub random: ThreadRng,
 }
@@ -175,7 +184,7 @@ impl<
         let party = Rc::new(PartyGui::new(&ctx.dex));
         let bag = Rc::new(BagGui::new(&ctx.dex));
 
-        let mut gui = BattlePlayerGui::new(&mut ctx.engine, party, bag);
+        let mut gui = BattlePlayerGui::new(&mut ctx.engine, &ctx.btl, party, bag);
 
         let t = "rival".parse().ok();
 
@@ -229,6 +238,7 @@ impl<
                                         unsafe { ITEMDEX.as_ref().unwrap() },
                                         addr,
                                         strings.next().map(ToOwned::to_owned),
+                                        // strings.next().map(|s| s.parse().ok()).flatten(),
                                     ),
                                     ConnectState::WaitConfirm,
                                 );
@@ -304,14 +314,7 @@ impl<
                     5.0,
                     params,
                 );
-                draw_text_left(
-                    &mut ctx.engine,
-                    &1,
-                    ip,
-                    5.0,
-                    25.0,
-                    params,
-                );
+                draw_text_left(&mut ctx.engine, &1, ip, 5.0, 25.0, params);
                 draw_text_left(
                     &mut ctx.engine,
                     &1,
