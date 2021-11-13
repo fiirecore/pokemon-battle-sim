@@ -3,7 +3,6 @@ pub extern crate firecore_battle as battle;
 pub use battle::pokedex;
 pub use bincode::{deserialize, serialize, Error as SerdeError};
 pub extern crate bincode;
-pub extern crate rand;
 
 use battle::{
     message::{ClientMessage, ServerMessage},
@@ -26,6 +25,8 @@ pub enum NetClientMessage<ID> {
     Join(Player),
     /// Send game messages to server
     Game(ClientMessage<ID>),
+    /// Leave game
+    Leave,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -36,7 +37,7 @@ pub enum NetServerMessage<ID> {
 
 #[derive(Debug, Deserialize, Serialize)]
 pub enum ConnectMessage {
-    CanJoin,
+    CanJoin(Party<SavedPokemon>),
     /// Client has not requested to join by sending version
     NoRequest,
     AlreadyConnected,
@@ -48,5 +49,4 @@ pub enum ConnectMessage {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Player {
     pub name: String,
-    pub party: Party<SavedPokemon>,
 }

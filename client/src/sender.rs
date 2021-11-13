@@ -1,9 +1,7 @@
-use crossbeam_channel::Receiver;
-use log::{debug, info, warn};
+use gui::pokedex::engine::log::{debug, error, info, warn};
+use naia_client_socket::{PacketReceiver, Socket};
 use serde::{de::DeserializeOwned, Serialize};
-use std::{fmt::Debug, hash::Hash, net::SocketAddr};
-
-use message_io::network::{split, Endpoint, NetEvent, NetworkController, SendStatus, Transport};
+use std::{fmt::Debug, hash::Hash};
 
 use common::{
     battle::{
@@ -11,127 +9,74 @@ use common::{
         message::ServerMessage,
     },
     deserialize,
-    pokedex::{
-        item::{bag::OwnedBag, Item, SavedItemStack},
-        moves::Move,
-        pokemon::{
-            owned::{OwnedPokemon, SavedPokemon},
-            party::Party,
-            stat::StatSet,
-            Pokemon,
-        },
-        Dex,
-    },
-    rand::Rng,
+    pokedex::{item::Item, moves::Move, pokemon::Pokemon},
     serialize, ConnectMessage, NetClientMessage, NetServerMessage, Player, VERSION,
 };
 
-use gui::{
-    pokedex::{BasicDex, Initializable},
-    BattlePlayerGui,
-};
+use gui::BattlePlayerGui;
 
-use crate::{ConnectState, GameContext};
+use crate::{ConnectState, GameContext, GuiPlayer, net::{Endpoint, PacketSender}};
 
-pub struct BattleConnection<
-    'd,
-    ID: Default + Clone + Eq + Hash + Debug + DeserializeOwned + Serialize + Send + 'static,
-> {
-    controller: NetworkController,
-    endpoint: Endpoint,
-    receiver: Receiver<NetServerMessage<ID>>,
-    pub party: Party<OwnedPokemon<&'d Pokemon, &'d Move, &'d Item>>,
-    pub bag: OwnedBag<&'d Item>,
+pub struct BattleConnection {
+    socket: Socket,
+    // endpoint: Endpoint,
+    sender: PacketSender,
+    receiver: PacketReceiver,
+    // receiver: Receiver<NetServerMessage<ID>>,
     name: Option<String>,
     accumulator: f32,
 }
 
-impl<
-        'd,
-        ID: Default + Clone + Eq + Hash + Debug + DeserializeOwned + Serialize + Send + 'static,
-    > BattleConnection<'d, ID>
-{
-    pub fn connect(itemdex: &'d BasicDex<Item>, address: SocketAddr, name: Option<String>) -> Self {
-        let (controller, mut processor) = split();
+impl BattleConnection {
+    pub fn connect(address: Endpoint, name: Option<String>) -> Option<Self> {
 
-        info!("Connecting to {}", address);
+        let mut socket = Socket::new(Default::default());
 
-        let (server, ..) = controller
-            .connect(Transport::FramedTcp, address)
-            .unwrap_or_else(|err| panic!("Could not connect to {} with error {}", address, err));
+        socket.connect(address);
 
-        let (sender, receiver) = crossbeam_channel::unbounded();
+        let sender = PacketSender::from(socket.get_packet_sender());
+        let receiver = socket.get_packet_receiver();
 
-        std::thread::spawn(move || loop {
-            processor.process_poll_event(Some(std::time::Duration::from_millis(1)), |event| {
-                match event {
-                    NetEvent::Connected(..) => (),
-                    NetEvent::Accepted(endpoint, id) => {
-                        debug!("Accepted to endpoint: {} with resource id {}", endpoint, id)
-                    }
-                    NetEvent::Message(endpoint, bytes) => {
-                        if endpoint == server {
-                            match deserialize::<NetServerMessage<ID>>(&bytes) {
-                                Ok(message) => {
-                                    debug!("Received message: {:?}", message);
-                                    if let Err(err) = sender.try_send(message) {
-                                        log::error!("Cannot send message through MPSC channel with error {}", err);
-                                    }
-                                }
-                                Err(err) => {
-                                    warn!("Could not receive server message with error {}", err)
-                                }
-                            }
-                        } else {
-                            warn!("Received packets from non server endpoint!")
-                        }
-                    }
-                    NetEvent::Disconnected(endpoint) => {
-                        info!("Disconnected from endpoint: {}", endpoint)
-                    }
-                }
-            });
-        });
+        // let mut socket = QuadSocket::connect(address).ok()?;
 
-        Self {
-            controller,
-            endpoint: server,
+        Some(Self {
+            socket,
+            sender,
             receiver,
+            // endpoint: address,
             name,
-            party: Default::default(),
-            bag: vec![SavedItemStack::new("hyper_potion".parse().unwrap(), 2)]
-                .init(itemdex)
-                .unwrap(),
             accumulator: 9.9,
-        }
+        })
     }
 
-    pub fn end(&mut self) {
-        self.controller.remove(self.endpoint.resource_id());
+    pub fn end<ID: Serialize>(&mut self) {
+        self.sender
+            .send(serialize(&NetClientMessage::<ID>::Leave).unwrap());
+        // self.controller.remove(self.endpoint.resource_id());
     }
 
-    pub fn wait_confirm(&mut self, ctx: &'d mut GameContext, delta: f32) -> Option<ConnectState> {
+    pub(crate) fn wait_confirm<ID: Serialize + DeserializeOwned>(
+        &mut self,
+        ctx: &mut GameContext,
+        player: &mut GuiPlayer,
+        delta: f32,
+    ) -> Option<ConnectState> {
         self.accumulator += delta;
         if self.accumulator >= 10.0 {
-            self.controller.send(
-                self.endpoint,
-                &serialize(&NetClientMessage::<ID>::RequestJoin(VERSION.to_owned())).unwrap(),
+            self.sender.send(
+                serialize(&NetClientMessage::<ID>::RequestJoin(VERSION.to_owned())).unwrap(),
             );
             self.accumulator -= 10.0;
         }
-        if let Some(message) = self.recv() {
+        if let Some(message) = self.recv::<ID>() {
             match message {
                 NetServerMessage::Validate(message) => {
                     return Some(match message {
-                        ConnectMessage::CanJoin => {
+                        ConnectMessage::CanJoin(party) => {
                             info!("Server accepted connection!");
 
-                            let pokedex = unsafe { crate::POKEDEX.as_ref().unwrap() };
-
-                            let party = generate_party(&mut ctx.random, pokedex.len() as _);
-
                             let name = self.name.take().unwrap_or_else(|| {
-                                use common::rand::distributions::Alphanumeric;
+                                use rand::{distributions::Alphanumeric, Rng};
                                 std::iter::repeat(())
                                     .map(|()| ctx.random.sample(Alphanumeric))
                                     .map(char::from)
@@ -139,18 +84,17 @@ impl<
                                     .collect()
                             });
 
-                            let m = NetClientMessage::Join(Player { name, party });
+                            let m = NetClientMessage::<ID>::Join(Player { name });
 
                             self.send(&m);
 
                             if let NetClientMessage::Join(p) = m {
-                                self.party = p
-                                    .party
+                                let pokedex = unsafe { crate::POKEDEX.as_ref().unwrap() };
+                                let movedex = unsafe { crate::MOVEDEX.as_ref().unwrap() };
+                                let itemdex = unsafe { crate::ITEMDEX.as_ref().unwrap() };
+                                player.party = party
                                     .into_iter()
                                     .map(|o| {
-                                        let pokedex = unsafe { crate::POKEDEX.as_ref().unwrap() };
-                                        let movedex = unsafe { crate::MOVEDEX.as_ref().unwrap() };
-                                        let itemdex = unsafe { crate::ITEMDEX.as_ref().unwrap() };
                                         o.init(&mut ctx.random, pokedex, movedex, itemdex)
                                             .unwrap_or_else(|| {
                                                 panic!("Could not initialize generated pokemon!")
@@ -167,15 +111,18 @@ impl<
                         }
                     });
                 }
-                other => warn!("Server sent unusable message {:?}", other),
+                NetServerMessage::Game(..) => {
+                    error!("Received game message when not in game!")
+                }
             }
         }
         None
     }
 
-    pub fn gui_receive(
+    pub(crate) fn gui_receive<'d, ID: Default + Eq + Hash + Debug + Clone + DeserializeOwned>(
         &mut self,
         gui: &mut BattlePlayerGui<ID, &'d Pokemon, &'d Move, &'d Item>,
+        player: &mut GuiPlayer<'d>,
         endpoint: &mut MpscEndpoint<ID>,
         ctx: &mut GameContext,
         state: &mut ConnectState,
@@ -211,7 +158,7 @@ impl<
                         pokedex,
                         movedex,
                         itemdex,
-                        &mut self.party,
+                        &mut player.party,
                     ); // process messages
                 }
                 NetServerMessage::Validate(message) => {
@@ -222,41 +169,29 @@ impl<
         }
     }
 
-    pub fn gui_send(&mut self, endpoint: &mut MpscEndpoint<ID>) {
+    pub fn gui_send<ID: Serialize>(&mut self, endpoint: &mut MpscEndpoint<ID>) {
         while let Ok(message) = BattleEndpoint::receive(endpoint) {
             self.send(&NetClientMessage::Game(message));
         }
     }
 
-    pub fn send(&mut self, message: &NetClientMessage<ID>) {
-        debug!("Sending message {:?}", message);
+    pub fn send<ID: Serialize>(&mut self, message: &NetClientMessage<ID>) {
         match serialize(message) {
-            Ok(bytes) => match self.controller.send(self.endpoint, &bytes) {
-                SendStatus::Sent => (),
-                status => todo!("{:?}", status),
-            },
+            Ok(bytes) => self.sender.send(bytes),
             Err(err) => todo!("{}", err),
         }
     }
 
-    pub fn recv(&mut self) -> Option<NetServerMessage<ID>> {
-        self.receiver.try_recv().ok()
+    pub fn recv<ID: DeserializeOwned>(&mut self) -> Option<NetServerMessage<ID>> {
+        match self.receiver.receive() {
+            Ok(Some(packet)) => match deserialize::<NetServerMessage<ID>>(packet.payload()) {
+                Ok(message) => Some(message),
+                Err(err) => {
+                    warn!("Could not receive server message with error {}", err);
+                    None
+                }
+            },
+            _ => None,
+        }
     }
-}
-
-pub fn generate_party(random: &mut impl Rng, pokedex_len: u16) -> Party<SavedPokemon> {
-    let mut party = Party::new();
-
-    for _ in 0..party.capacity() {
-        let id = random.gen_range(1..pokedex_len);
-        party.push(SavedPokemon::generate(
-            random,
-            id,
-            50,
-            None,
-            Some(StatSet::uniform(15)),
-        ));
-    }
-
-    party
 }

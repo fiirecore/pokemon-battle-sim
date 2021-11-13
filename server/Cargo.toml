@@ -12,10 +12,13 @@ toml = "0.5"
 serde = { version = "1.0", features = ["derive"] }
 simple_logger = "1"
 log = "0.4"
-hashbrown = "0.11"
-message-io = { version = "0.14", features = ["tcp"], default-features = false }
 crossbeam-channel = "0.5"
+rand = "0.8"
+
+# message-io = { version = "0.14", features = ["tcp"], default-features = false }
+naia-server-socket = { version = "0.7", features = ["use-webrtc"] }
+# quad-net = { version = "0.1.1", default-features = false }
 
 [build-dependencies]
-firecore-battle-builder = { git = "https://github.com/DoNotDoughnut/firecore-battle-builder", rev = "57708e0" }
+firecore-battle-builder = { git = "https://github.com/DoNotDoughnut/firecore-battle-builder", rev = "1c253dc" }
 bincode = "1.3"

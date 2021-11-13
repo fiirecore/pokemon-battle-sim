@@ -2,7 +2,7 @@
 name = "firecore-battle-net"
 version = "0.5.0"
 authors = ["Rhys Holloway <rhyswilliamholloway@gmail.com>"]
-edition = "2018"
+edition = "2021"
 repository = "https://github.com/DoNotDoughnut/pokemon-battle-net"
 build = "build.rs"
 # default-run = "pokemon-battle-server"
@@ -10,7 +10,7 @@ build = "build.rs"
 [features]
 default = []
 server = ["firecore-battle/host", "firecore-battle/default_engine_scripting", "firecore-battle/ai"]
-build = ["firecore-pokedex-builder", "winres"]
+build = ["firecore-pokedex-builder"]
 
 [profile.release]
 lto = true
@@ -19,17 +19,16 @@ codegen-units = 1
 opt-level = "z"
 
 [dependencies]
-firecore-battle = { git = "https://github.com/fiirecore/battle", rev = "0e98c89", default-features = false }
+firecore-battle = { git = "https://github.com/fiirecore/battle", rev = "bcf09dd", default-features = false }
 bincode = "1.3"
 serde = { version = "1.0", features = ["derive"] }
-rand = "0.8"
 
 [build-dependencies]
-firecore-pokedex-builder = { git = "https://github.com/DoNotDoughnut/firecore-pokedex-builder", rev = "215467c", optional = true }
+firecore-pokedex-builder = { git = "https://github.com/DoNotDoughnut/firecore-pokedex-builder", rev = "71ec330", optional = true }
 bincode = "1.3"
 
-[target.'cfg(windows)'.build-dependencies]
-winres = { version = "0.1", optional = true }
+# [target.'cfg(windows)'.build-dependencies]
+# winres = { version = "0.1", optional = true }
 
 [workspace]
 default-members = ["client", "server"]

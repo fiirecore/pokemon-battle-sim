@@ -3,6 +3,7 @@
 extern crate firecore_battle_gui as gui;
 extern crate firecore_battle_net as common;
 pub use gui::pokedex::engine;
+use rand::prelude::SmallRng;
 use serde::{de::DeserializeOwned, Serialize};
 
 use std::{
@@ -17,7 +18,6 @@ use common::{
     battle::endpoint::MpscEndpoint,
     deserialize,
     pokedex::{item::Item, moves::Move, pokemon::Pokemon, BasicDex},
-    rand::prelude::ThreadRng,
     Id, DEFAULT_PORT,
 };
 
@@ -28,6 +28,7 @@ use engine::{
         Color, DrawParams,
     },
     input::{self, keyboard::Key},
+    log::{info, warn},
     text::FontSheet,
     text::TextColor,
     util::{HEIGHT, WIDTH},
@@ -39,16 +40,18 @@ use gui::{
     pokedex::{
         context::PokedexClientData,
         gui::{bag::BagGui, party::PartyGui},
+        item::bag::OwnedBag,
+        pokemon::{owned::OwnedPokemon, party::Party},
+        Initializable,
     },
 };
 
 use gui::BattlePlayerGui;
 
-use log::{info, warn, LevelFilter};
-
 use self::sender::BattleConnection;
 
 mod sender;
+mod net;
 
 const SCALE: f32 = 3.0;
 const TITLE: &str = "Pokemon Battle";
@@ -60,16 +63,16 @@ static mut MOVEDEX: Option<BasicDex<Move>> = None;
 static mut ITEMDEX: Option<BasicDex<Item>> = None;
 
 fn main() {
-    let l = simple_logger::SimpleLogger::new();
+    // let l = simple_logger::SimpleLogger::new();
 
-    #[cfg(debug_assertions)]
-    let l = l.with_level(LevelFilter::Trace);
+    // #[cfg(debug_assertions)]
+    // let l = l.with_level(LevelFilter::Trace);
 
-    #[cfg(not(debug_assertions))]
-    let l = l.with_level(LevelFilter::Info);
+    // #[cfg(not(debug_assertions))]
+    // let l = l.with_level(LevelFilter::Info);
 
-    l.init()
-        .unwrap_or_else(|err| panic!("Could not initialize logger with error {}", err));
+    // l.init()
+    //     .unwrap_or_else(|err| panic!("Could not initialize logger with error {}", err));
 
     let fonts: Vec<FontSheet<Vec<u8>>> = deserialize(include_bytes!("../fonts.bin"))
         .unwrap_or_else(|err| panic!("Could not read fonts with error {}", err));
@@ -109,22 +112,28 @@ fn main() {
                 panic!("Cannot initialize battle gui context with error {}", err)
             });
 
+            let seed = (engine::inner::miniquad::date::now() * 10000.0) as u64;
+
+            use rand::SeedableRng;
+
+            let random = SmallRng::seed_from_u64(seed);
+
             GameContext {
                 engine: ctx,
                 btl,
                 dex,
-                random: common::rand::thread_rng(),
+                random,
             }
         },
         GameState::<Id>::new,
     );
 }
 
-pub struct GameContext {
+struct GameContext {
     pub engine: Context,
     pub btl: BattleGuiContext,
     pub dex: PokedexClientData,
-    pub random: ThreadRng,
+    pub random: SmallRng,
 }
 
 impl Deref for GameContext {
@@ -141,23 +150,17 @@ impl DerefMut for GameContext {
     }
 }
 
-pub enum States<
-    'd,
-    ID: Default + Clone + Debug + Eq + Hash + Serialize + DeserializeOwned + Send + 'static,
-> {
+enum States {
     Connect(String),
-    Connected(BattleConnection<'d, ID>, ConnectState),
+    Connected(BattleConnection, ConnectState),
 }
 
-impl<
-        'd,
-        ID: Default + Clone + Debug + Eq + Hash + Serialize + DeserializeOwned + Send + 'static,
-    > States<'d, ID>
-{
+impl States {
     pub const CONNECT: Self = Self::Connect(String::new());
 }
 
-pub enum ConnectState {
+enum ConnectState {
+    // WaitConnect,
     WaitConfirm,
     // WaitBegin,
     Closed,
@@ -166,13 +169,25 @@ pub enum ConnectState {
     ConnectedPlay,
 }
 
+impl Default for ConnectState {
+    fn default() -> Self {
+        Self::WaitConfirm
+    }
+}
+
 struct GameState<
     'd,
     ID: Default + Clone + Debug + Eq + Hash + Serialize + DeserializeOwned + Send + 'static,
 > {
-    state: States<'d, ID>,
+    state: States,
+    player: GuiPlayer<'d>,
     gui: BattlePlayerGui<ID, &'d Pokemon, &'d Move, &'d Item>,
     gui_endpoint: MpscEndpoint<ID>,
+}
+
+struct GuiPlayer<'d> {
+    pub party: Party<OwnedPokemon<&'d Pokemon, &'d Move, &'d Item>>,
+    pub bag: OwnedBag<&'d Item>,
 }
 
 impl<
@@ -199,9 +214,18 @@ impl<
         let gui_endpoint = gui.endpoint().clone();
 
         Self {
-            state: States::Connect(String::new()),
+            state: States::CONNECT,
             gui,
-            gui_endpoint,
+            player: GuiPlayer {
+                party: Default::default(),
+                bag: vec![gui::pokedex::item::SavedItemStack::new(
+                    "hyper_potion".parse().unwrap(),
+                    2,
+                )]
+                .init(unsafe { ITEMDEX.as_ref().unwrap() })
+                .unwrap(),
+            },
+            gui_endpoint: gui_endpoint,
         }
     }
 }
@@ -216,7 +240,7 @@ impl<
             States::Connect(..) => (),
             States::Connected(connection, ..) => {
                 self.gui.forfeit();
-                connection.end();
+                connection.end::<ID>();
             }
         }
     }
@@ -233,15 +257,20 @@ impl<
                         Some(addr) => match find_address(parse_address(addr)) {
                             Ok(addr) => {
                                 info!("Connecting to server at {}", addr);
-                                self.state = States::Connected(
-                                    BattleConnection::connect(
-                                        unsafe { ITEMDEX.as_ref().unwrap() },
-                                        addr,
-                                        strings.next().map(ToOwned::to_owned),
-                                        // strings.next().map(|s| s.parse().ok()).flatten(),
-                                    ),
-                                    ConnectState::WaitConfirm,
-                                );
+                                match BattleConnection::connect(
+                                    addr,
+                                    strings.next().map(ToOwned::to_owned),
+                                    // strings.next().map(|s| s.parse().ok()).flatten(),
+                                ) {
+                                    Some(connection) => {
+                                        self.state =
+                                            States::Connected(connection, ConnectState::default())
+                                    }
+                                    None => {
+                                        warn!("Could not create connection!");
+                                        string.clear();
+                                    }
+                                }
                             }
                             Err(err) => {
                                 warn!("Could not parse address with error {}", err);
@@ -254,15 +283,20 @@ impl<
                 //     string.push_str(new);
                 // }
                 } else {
-                    while let Some(c) = input::keyboard::get_char_pressed() {
+                    while let Some(c) = engine::inner::prelude::get_char_pressed() {
                         string.push(c);
                     }
                 }
             }
             States::Connected(connection, state) => match state {
+                // ConnectState::WaitConnect => {
+                //     if connection.connected() {
+                //         *state = ConnectState::WaitConfirm;
+                //     }
+                // }
                 ConnectState::WaitConfirm => {
                     if let Some(connected) =
-                        connection.wait_confirm(unsafe { &mut *(ctx as *mut _) }, delta)
+                        connection.wait_confirm::<ID>(ctx, &mut self.player, delta)
                     {
                         *state = connected;
                     }
@@ -270,8 +304,9 @@ impl<
                 ConnectState::Closed => self.state = States::Connect(String::new()),
                 ConnectState::ConnectedWait => connection.gui_receive(
                     &mut self.gui,
+                    &mut self.player,
                     &mut self.gui_endpoint,
-                    unsafe { &mut *(ctx as *mut _) },
+                    ctx,
                     state,
                 ),
                 ConnectState::WrongVersion(remaining) => {
@@ -281,7 +316,13 @@ impl<
                     }
                 }
                 ConnectState::ConnectedPlay => {
-                    connection.gui_receive(&mut self.gui, &mut self.gui_endpoint, ctx, state);
+                    connection.gui_receive(
+                        &mut self.gui,
+                        &mut self.player,
+                        &mut self.gui_endpoint,
+                        ctx,
+                        state,
+                    );
                     let pokedex = unsafe { crate::POKEDEX.as_ref().unwrap() };
                     let movedex = unsafe { crate::MOVEDEX.as_ref().unwrap() };
                     let itemdex = unsafe { crate::ITEMDEX.as_ref().unwrap() };
@@ -292,7 +333,7 @@ impl<
                         movedex,
                         itemdex,
                         delta,
-                        &mut connection.bag,
+                        &mut self.player.bag,
                     );
                     connection.gui_send(&mut self.gui_endpoint);
                 }
@@ -332,7 +373,7 @@ impl<
                     params,
                 );
             }
-            States::Connected(connection, connected) => match connected {
+            States::Connected(.., connected) => match connected {
                 ConnectState::WaitConfirm => draw_text_left(
                     &mut ctx.engine,
                     &1,
@@ -371,8 +412,8 @@ impl<
                     self.gui.draw(
                         &mut ctx.engine,
                         &ctx.dex,
-                        &connection.party,
-                        &connection.bag,
+                        &self.player.party,
+                        &self.player.bag,
                     );
                 }
                 ConnectState::Closed => draw_text_left(
@@ -411,15 +452,27 @@ fn parse_address(addr: &str) -> (&str, u16) {
 }
 
 fn find_address(addr: (&str, u16)) -> Result<SocketAddr, std::io::Error> {
-    use message_io::network::{RemoteAddr, ToRemoteAddr};
-    match addr.to_remote_addr() {
-        Ok(address) => match address {
-            RemoteAddr::Socket(address) => Ok(address),
-            RemoteAddr::Str(..) => Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidInput,
-                "The address was not able to be parsed.",
-            )),
-        },
-        Err(err) => Err(err),
-    }
+    // use message_io::network::{RemoteAddr, ToRemoteAddr};
+    // match addr.to_remote_addr() {
+    //     Ok(address) => match address {
+    //         RemoteAddr::Socket(address) => Ok(address),
+    //         RemoteAddr::Str(..) => Err(std::io::Error::new(
+    //             std::io::ErrorKind::InvalidInput,
+    //             "The address was not able to be parsed.",
+    //         )),
+    //     },
+    //     Err(err) => Err(err),
+    // }
+    // #[cfg(not(target_arch = "wasm32"))]
+    // let ws = "";
+
+    use std::net::ToSocketAddrs;
+
+    Ok(format!("{}:{}", addr.0, addr.1).to_socket_addrs().unwrap().next().unwrap())
+    // Ok(SocketAddr::new(
+    //     addr.0
+    //         .parse()
+    //         .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidInput, err))?,
+    //     addr.1,
+    // ))
 }
